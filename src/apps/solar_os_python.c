@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "esp_attr.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "solar_os_log.h"
@@ -151,7 +152,7 @@ typedef struct {
 } python_app_state_t;
 
 static const char *TAG = "solar_os_python";
-static python_app_state_t python_app;
+static EXT_RAM_BSS_ATTR python_app_state_t python_app;
 static solar_os_shell_io_t python_fallback_io;
 
 static solar_os_shell_io_t *python_io(solar_os_context_t *ctx)

@@ -14,6 +14,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -92,7 +93,7 @@ struct solar_os_shell_session {
     solar_os_shell_io_t io;
 };
 
-static solar_os_shell_session_t shell_display_session;
+static EXT_RAM_BSS_ATTR solar_os_shell_session_t shell_display_session;
 
 static void cmd_help(solar_os_context_t *ctx, int argc, char **argv);
 static void cmd_cd(solar_os_context_t *ctx, int argc, char **argv);

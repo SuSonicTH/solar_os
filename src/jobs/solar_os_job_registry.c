@@ -18,7 +18,7 @@ static const solar_os_job_registry_entry_t registered_jobs[] = {
     {"log", "stream SolarOS logs to a port or file", &solar_os_log_job},
     {"ntp-sync", "periodic RTC NTP sync", &solar_os_ntp_sync_job},
     {"shell", "VT100 shell on a byte-stream port", &solar_os_shell_job},
-    {"slip", "SLIP IPv4 gateway on a byte-stream port", &solar_os_slip_job},
+    {"slip", "SLIP IPv4 gateway on a port", &solar_os_slip_job},
 };
 
 static const size_t registered_job_count = sizeof(registered_jobs) / sizeof(registered_jobs[0]);

@@ -27,6 +27,7 @@
 #include "solar_os_i2c.h"
 #include "solar_os_jobs.h"
 #include "solar_os_log.h"
+#include "solar_os_memory.h"
 #include "solar_os_ota.h"
 #include "solar_os_port.h"
 #include "solar_os_pwm.h"
@@ -52,7 +53,7 @@
 static const char *TAG = "solar_os";
 
 static rlcd_st7305_t lcd;
-static solar_os_terminal_t terminal;
+static solar_os_terminal_t *terminal;
 static solar_os_gfx_t gfx;
 static solar_os_context_t os_ctx;
 static const solar_os_app_t *foreground_app;
@@ -160,8 +161,10 @@ static void IRAM_ATTR key_button_isr(void *arg)
 
 static void draw_terminal_if_needed(void)
 {
-    if (!solar_os_context_graphics_active(&os_ctx) && solar_os_terminal_needs_draw(&terminal)) {
-        solar_os_terminal_draw(&terminal);
+    if (!solar_os_context_graphics_active(&os_ctx) &&
+        terminal != NULL &&
+        solar_os_terminal_needs_draw(terminal)) {
+        solar_os_terminal_draw(terminal);
     }
 }
 
@@ -189,7 +192,7 @@ static void resume_display_after_sleep(uint32_t now_ms)
     if (solar_os_context_graphics_active(&os_ctx)) {
         dispatch_app_resume(now_ms);
     } else {
-        terminal.dirty = true;
+        terminal->dirty = true;
         draw_terminal_if_needed();
     }
 }
@@ -522,7 +525,7 @@ static void update_status(void)
         status.minute = datetime.minute;
     }
 
-    solar_os_terminal_set_status_bar(&terminal, &status);
+    solar_os_terminal_set_status_bar(terminal, &status);
 }
 
 static void init_peripherals(void)
@@ -749,9 +752,17 @@ void app_main(void)
         }
     }
 
-    solar_os_terminal_init(&terminal, rlcd_st7305_get_u8g2(&lcd));
+    terminal = solar_os_psram_calloc(1, sizeof(*terminal));
+    if (terminal == NULL) {
+        ESP_LOGE(TAG, "Terminal allocation failed");
+        while (true) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
+
+    solar_os_terminal_init(terminal, rlcd_st7305_get_u8g2(&lcd));
     solar_os_gfx_init(&gfx, rlcd_st7305_get_u8g2(&lcd));
-    solar_os_context_init(&os_ctx, &terminal, &gfx);
+    solar_os_context_init(&os_ctx, terminal, &gfx);
     ESP_ERROR_CHECK(solar_os_jobs_init());
 
     init_peripherals();

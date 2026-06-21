@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_netif.h"
 #include "esp_netif_net_stack.h"
 #include "freertos/FreeRTOS.h"
@@ -20,6 +21,7 @@
 #include "lwip/opt.h"
 #include "lwip/pbuf.h"
 #include "solar_os_log.h"
+#include "solar_os_memory.h"
 #include "solar_os_port.h"
 #include "solar_os_uart.h"
 
@@ -72,7 +74,7 @@ typedef struct {
     ip4_addr_t local_ip;
     ip4_addr_t peer_ip;
     ip4_addr_t netmask;
-    uint8_t frame[SLIP_JOB_FRAME_SIZE];
+    uint8_t *frame;
     size_t frame_len;
     bool escaped;
     bool dropping;
@@ -549,7 +551,7 @@ static void slip_reset_rx_frame(void)
 
 static void slip_deliver_frame(void)
 {
-    if (slip_job.frame_len == 0) {
+    if (slip_job.frame == NULL || slip_job.frame_len == 0) {
         slip_reset_rx_frame();
         return;
     }
@@ -603,7 +605,7 @@ static void slip_rx_byte(uint8_t value)
         return;
     }
 
-    if (slip_job.frame_len >= sizeof(slip_job.frame)) {
+    if (slip_job.frame_len >= SLIP_JOB_FRAME_SIZE) {
         slip_job.rx_oversize++;
         slip_job.last_error = ESP_ERR_NO_MEM;
         slip_job.dropping = true;
@@ -619,6 +621,11 @@ static void slip_cleanup(void)
 
     if (solar_os_port_handle_valid(&slip_job.port)) {
         (void)solar_os_port_release(&slip_job.port);
+    }
+
+    if (slip_job.frame != NULL) {
+        heap_caps_free(slip_job.frame);
+        slip_job.frame = NULL;
     }
 
     slip_job.running = false;
@@ -715,6 +722,12 @@ static esp_err_t slip_job_start(solar_os_context_t *ctx, int argc, char **argv)
         return err;
     }
 
+    slip_job.frame = solar_os_psram_malloc(SLIP_JOB_FRAME_SIZE);
+    if (slip_job.frame == NULL) {
+        slip_cleanup();
+        return ESP_ERR_NO_MEM;
+    }
+
     slip_job.running = true;
     slip_job.stop_requested = false;
     slip_job.baud_rate = config.baud_rate;
@@ -769,7 +782,7 @@ static void slip_job_stop(solar_os_context_t *ctx)
 
 const solar_os_job_t solar_os_slip_job = {
     .name = "slip",
-    .summary = "SLIP IPv4 gateway on a byte-stream port",
+    .summary = "SLIP IPv4 gateway on a port",
     .start = slip_job_start,
     .stop = slip_job_stop,
     .event = NULL,

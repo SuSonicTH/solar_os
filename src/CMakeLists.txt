@@ -58,6 +58,7 @@ idf_component_register(
         "services/solar_os_i2c.c"
         "services/solar_os_identity.c"
         "services/solar_os_log.c"
+        "services/solar_os_memory.c"
         "services/solar_os_net.c"
         "services/solar_os_ota.c"
         "services/solar_os_port.c"
