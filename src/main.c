@@ -21,6 +21,7 @@
 #include "solar_os_app_registry.h"
 #include "solar_os_battery.h"
 #include "solar_os_ble_keyboard.h"
+#include "solar_os_chat.h"
 #include "solar_os_cdc.h"
 #include "solar_os_gpio.h"
 #include "solar_os_gfx_internal.h"
@@ -565,6 +566,11 @@ static void init_peripherals(void)
     const esp_err_t mqtt_err = solar_os_mqtt_init();
     if (mqtt_err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "MQTT service unavailable: %s", esp_err_to_name(mqtt_err));
+    }
+
+    const esp_err_t chat_err = solar_os_chat_init();
+    if (chat_err != ESP_OK) {
+        SOLAR_OS_LOGW(TAG, "Chat service unavailable: %s", esp_err_to_name(chat_err));
     }
 
     const esp_err_t uart_err = solar_os_uart_init();

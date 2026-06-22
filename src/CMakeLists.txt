@@ -13,6 +13,7 @@ idf_component_register(
         "solar_os_task.c"
         "apps/solar_os_app_registry.c"
         "apps/solar_os_audio_apps.c"
+        "apps/solar_os_chat.c"
         "apps/solar_os_clock.c"
         "apps/solar_os_com.c"
         "apps/solar_os_curl.c"
@@ -52,6 +53,7 @@ idf_component_register(
         "services/solar_os_battery.c"
         "services/solar_os_ble_keyboard.c"
         "services/solar_os_cdc.c"
+        "services/solar_os_chat.c"
         "services/solar_os_clipboard.c"
         "services/solar_os_gfx.c"
         "services/solar_os_gpio.c"
@@ -76,7 +78,7 @@ idf_component_register(
         "services/solar_os_uart.c"
         "services/solar_os_wifi.c"
     INCLUDE_DIRS "." "apps" "drivers" "jobs" "services" "shell" "../include"
-    REQUIRES app_update bt esp_adc esp_codec_dev esp_driver_gpio esp_driver_i2c esp_driver_i2s esp_driver_ledc esp_driver_sdmmc esp_driver_spi esp_driver_uart esp_driver_usb_serial_jtag esp_event esp_hid esp_http_client esp_http_server esp_https_ota esp_netif esp_timer esp_wifi fatfs heap lwip mbedtls micropython_embed mqtt nvs_flash sdmmc stb_image u8g2
+    REQUIRES app_update bt esp-tls esp_adc esp_codec_dev esp_driver_gpio esp_driver_i2c esp_driver_i2s esp_driver_ledc esp_driver_sdmmc esp_driver_spi esp_driver_uart esp_driver_usb_serial_jtag esp_event esp_hid esp_http_client esp_http_server esp_https_ota esp_netif esp_timer esp_wifi fatfs heap lwip mbedtls micropython_embed mqtt nvs_flash sdmmc stb_image u8g2
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE SOLAR_OS_VERSION="${SOLAR_OS_VERSION}")
