@@ -48,10 +48,14 @@
 #define WEB_TASK_PRIORITY (tskIDLE_PRIORITY + 2)
 #define WEB_EVENT_QUEUE_LEN 8
 #define WEB_TIMEOUT_MS 12000
+#define WEB_REDIRECT_MAX 5
 #define WEB_MARGIN_X 5
 #define WEB_HEADER_HEIGHT 18
 #define WEB_FOOTER_HEIGHT 12
 #define WEB_LINE_HEIGHT 11
+#define WEB_CONTROL_HEIGHT 22
+#define WEB_CONTROL_FIELD_HEIGHT 16
+#define WEB_CONTROL_BOX_SIZE 11
 #define WEB_TEXT_BASELINE 9
 
 typedef enum {
@@ -821,7 +825,7 @@ static void web_add_control_line(int control_index)
     }
     line->control_index = (int16_t)control_index;
     line->style = WEB_LINE_CONTROL;
-    line->height = WEB_LINE_HEIGHT;
+    line->height = WEB_CONTROL_HEIGHT;
     web_newline(WEB_LINE_NORMAL);
 }
 
@@ -1269,6 +1273,7 @@ typedef struct {
     size_t len;
     size_t max_len;
     bool truncated;
+    char redirect_url[WEB_URL_MAX];
 } web_fetch_buffer_t;
 
 static esp_err_t web_fetch_event(esp_http_client_event_t *event)
@@ -1278,6 +1283,16 @@ static esp_err_t web_fetch_event(esp_http_client_event_t *event)
     }
     if (web.stop_requested) {
         return ESP_FAIL;
+    }
+    if (event->event_id == HTTP_EVENT_ON_HEADER) {
+        web_fetch_buffer_t *buffer = (web_fetch_buffer_t *)event->user_data;
+        if (buffer != NULL &&
+            event->header_key != NULL &&
+            event->header_value != NULL &&
+            strcasecmp(event->header_key, "Location") == 0) {
+            strlcpy(buffer->redirect_url, event->header_value, sizeof(buffer->redirect_url));
+        }
+        return ESP_OK;
     }
     if (event->event_id != HTTP_EVENT_ON_DATA) {
         return ESP_OK;
@@ -1324,6 +1339,11 @@ static esp_err_t web_fetch_bytes(const char *url,
         *out_status = -1;
     }
 
+    char current_url[WEB_URL_MAX];
+    if (strlcpy(current_url, url, sizeof(current_url)) >= sizeof(current_url)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
     uint8_t *data = web_malloc(max_len);
     if (data == NULL) {
         return ESP_ERR_NO_MEM;
@@ -1333,32 +1353,63 @@ static esp_err_t web_fetch_bytes(const char *url,
         .data = data,
         .max_len = max_len,
     };
-    esp_http_client_config_t config = {
-        .url = url,
-        .method = HTTP_METHOD_GET,
-        .timeout_ms = WEB_TIMEOUT_MS,
-        .disable_auto_redirect = false,
-        .event_handler = web_fetch_event,
-        .buffer_size = 1024,
-        .buffer_size_tx = 512,
-        .user_agent = "SolarOS-web/0.1",
-        .user_data = &buffer,
-    };
+    esp_err_t err = ESP_FAIL;
+    int status = -1;
+    for (int redirect = 0; redirect <= WEB_REDIRECT_MAX && !web.stop_requested; redirect++) {
+        buffer.len = 0;
+        buffer.truncated = false;
+        buffer.redirect_url[0] = '\0';
+
+        esp_http_client_config_t config = {
+            .url = current_url,
+            .method = HTTP_METHOD_GET,
+            .timeout_ms = WEB_TIMEOUT_MS,
+            .disable_auto_redirect = true,
+            .event_handler = web_fetch_event,
+            .buffer_size = 1024,
+            .buffer_size_tx = 512,
+            .user_agent = "SolarOS-web/0.1",
+            .user_data = &buffer,
+        };
 #if CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
-    config.crt_bundle_attach = esp_crt_bundle_attach;
+        config.crt_bundle_attach = esp_crt_bundle_attach;
 #endif
 
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (client == NULL) {
-        heap_caps_free(data);
-        return ESP_ERR_NO_MEM;
-    }
+        esp_http_client_handle_t client = esp_http_client_init(&config);
+        if (client == NULL) {
+            heap_caps_free(data);
+            return ESP_ERR_NO_MEM;
+        }
 
-    web.client = client;
-    const esp_err_t err = esp_http_client_perform(client);
-    const int status = esp_http_client_get_status_code(client);
-    web.client = NULL;
-    esp_http_client_cleanup(client);
+        web.client = client;
+        err = esp_http_client_perform(client);
+        status = esp_http_client_get_status_code(client);
+        web.client = NULL;
+        esp_http_client_cleanup(client);
+
+        if (out_status != NULL) {
+            *out_status = status;
+        }
+        if (out_truncated != NULL) {
+            *out_truncated = buffer.truncated;
+        }
+
+        if (err == ESP_OK &&
+            status >= 300 &&
+            status < 400 &&
+            buffer.redirect_url[0] != '\0') {
+            char next_url[WEB_URL_MAX];
+            if (!web_resolve_url(current_url, buffer.redirect_url, next_url, sizeof(next_url))) {
+                heap_caps_free(data);
+                return ESP_FAIL;
+            }
+            SOLAR_OS_LOGI(TAG, "redirect %d: %s -> %s", status, current_url, next_url);
+            strlcpy(current_url, next_url, sizeof(current_url));
+            continue;
+        }
+
+        break;
+    }
 
     if (out_status != NULL) {
         *out_status = status;
@@ -1462,10 +1513,13 @@ static bool web_url_ext_eq(const char *dot, const char *end, const char *ext)
     return dot_len == strlen(ext) && strncasecmp(dot, ext, dot_len) == 0;
 }
 
-static bool web_url_looks_like_image(const char *url)
+static const char *web_url_extension(const char *url, const char **out_end)
 {
+    if (out_end != NULL) {
+        *out_end = NULL;
+    }
     if (url == NULL) {
-        return false;
+        return NULL;
     }
 
     const char *end = strpbrk(url, "?#");
@@ -1476,14 +1530,40 @@ static bool web_url_looks_like_image(const char *url)
     while (dot > url && dot[-1] != '/' && dot[-1] != ':') {
         dot--;
         if (*dot == '.') {
-            return web_url_ext_eq(dot, end, ".jpg") ||
-                web_url_ext_eq(dot, end, ".jpeg") ||
-                web_url_ext_eq(dot, end, ".png") ||
-                web_url_ext_eq(dot, end, ".gif") ||
-                web_url_ext_eq(dot, end, ".webp");
+            if (out_end != NULL) {
+                *out_end = end;
+            }
+            return dot;
         }
     }
-    return false;
+    return NULL;
+}
+
+static bool web_url_looks_like_image(const char *url)
+{
+    const char *end = NULL;
+    const char *dot = web_url_extension(url, &end);
+    if (dot == NULL || end == NULL) {
+        return false;
+    }
+
+    return web_url_ext_eq(dot, end, ".jpg") ||
+        web_url_ext_eq(dot, end, ".jpeg") ||
+        web_url_ext_eq(dot, end, ".png") ||
+        web_url_ext_eq(dot, end, ".gif") ||
+        web_url_ext_eq(dot, end, ".webp");
+}
+
+static bool web_url_is_unsupported_image(const char *url)
+{
+    const char *end = NULL;
+    const char *dot = web_url_extension(url, &end);
+    if (dot == NULL || end == NULL) {
+        return false;
+    }
+
+    return web_url_ext_eq(dot, end, ".svg") ||
+        web_url_ext_eq(dot, end, ".svgz");
 }
 
 static void web_apply_image_layout(web_image_t *image,
@@ -1604,6 +1684,10 @@ static void web_load_images(void)
 
         char resolved[WEB_URL_MAX];
         if (!web_resolve_url(web.url, image->src, resolved, sizeof(resolved))) {
+            continue;
+        }
+        if (web_url_is_unsupported_image(resolved)) {
+            SOLAR_OS_LOGD(TAG, "skip unsupported image src=%s", resolved);
             continue;
         }
 
@@ -1832,18 +1916,65 @@ done:
     vTaskDelete(NULL);
 }
 
-static int web_visible_line_count(solar_os_gfx_t *gfx)
+static int web_body_height(solar_os_gfx_t *gfx)
 {
     const int height = (int)solar_os_gfx_height(gfx);
     const int body = height - WEB_HEADER_HEIGHT - WEB_FOOTER_HEIGHT - 2;
+    return body > WEB_LINE_HEIGHT ? body : WEB_LINE_HEIGHT;
+}
+
+static int web_line_height_at(int line_index)
+{
+    if (line_index < 0 || line_index >= (int)web.line_count || web.lines == NULL) {
+        return WEB_LINE_HEIGHT;
+    }
+    return web.lines[line_index].height > 0 ? web.lines[line_index].height : WEB_LINE_HEIGHT;
+}
+
+static int web_visible_line_count(solar_os_gfx_t *gfx)
+{
+    const int body = web_body_height(gfx);
+    int used = 0;
+    int count = 0;
+    for (int i = web.scroll; i < (int)web.line_count; i++) {
+        const int line_height = web_line_height_at(i);
+        if (count > 0 && used + line_height > body) {
+            break;
+        }
+        used += line_height;
+        count++;
+        if (used >= body) {
+            break;
+        }
+    }
+    if (count > 0) {
+        return count;
+    }
     return body > WEB_LINE_HEIGHT ? body / WEB_LINE_HEIGHT : 1;
+}
+
+static int web_max_scroll(solar_os_gfx_t *gfx)
+{
+    if (web.line_count == 0) {
+        return 0;
+    }
+
+    const int body = web_body_height(gfx);
+    int used = 0;
+    for (int i = (int)web.line_count - 1; i >= 0; i--) {
+        const int line_height = web_line_height_at(i);
+        if (used + line_height > body) {
+            const int max_scroll = i + 1;
+            return max_scroll < (int)web.line_count ? max_scroll : (int)web.line_count - 1;
+        }
+        used += line_height;
+    }
+    return 0;
 }
 
 static void web_clamp_scroll(solar_os_gfx_t *gfx)
 {
-    const int visible = web_visible_line_count(gfx);
-    const int max_scroll = web.line_count > (size_t)visible ?
-        (int)web.line_count - visible : 0;
+    const int max_scroll = web_max_scroll(gfx);
     if (web.scroll < 0) {
         web.scroll = 0;
     }
@@ -1912,49 +2043,218 @@ static void web_draw_text_clipped(solar_os_gfx_t *gfx,
     solar_os_gfx_text(gfx, x, baseline_y, clipped);
 }
 
-static void web_control_display(const web_control_t *control, char *out, size_t out_len)
+static const char *web_control_label(const web_control_t *control, const char *fallback)
+{
+    if (control == NULL) {
+        return fallback != NULL ? fallback : "";
+    }
+    if (control->label[0] != '\0') {
+        return control->label;
+    }
+    if (control->name[0] != '\0') {
+        return control->name;
+    }
+    return fallback != NULL ? fallback : "";
+}
+
+static bool web_control_is_editing(const web_control_t *control)
+{
+    return web.editing &&
+        web.edit_control >= 0 &&
+        web.edit_control < (int)web.control_count &&
+        control == &web.controls[web.edit_control];
+}
+
+static size_t web_copy_control_value_window(const web_control_t *control,
+                                            char *out,
+                                            size_t out_len,
+                                            size_t visible_chars)
 {
     if (out == NULL || out_len == 0) {
-        return;
+        return 0;
     }
     out[0] = '\0';
-    if (control == NULL) {
+    if (control == NULL || visible_chars == 0) {
+        return 0;
+    }
+
+    const size_t len = strlen(control->value);
+    size_t cursor = web_control_is_editing(control) ? web.edit_cursor : 0;
+    if (cursor > len) {
+        cursor = len;
+    }
+
+    size_t start = 0;
+    if (web_control_is_editing(control) && cursor >= visible_chars) {
+        start = cursor - visible_chars + 1U;
+    }
+
+    size_t copy_len = len > start ? len - start : 0;
+    if (copy_len > visible_chars) {
+        copy_len = visible_chars;
+    }
+    if (copy_len + 1U > out_len) {
+        copy_len = out_len - 1U;
+    }
+    if (copy_len > 0) {
+        memcpy(out, control->value + start, copy_len);
+    }
+    out[copy_len] = '\0';
+
+    if (cursor < start) {
+        return 0;
+    }
+    size_t cursor_pos = cursor - start;
+    return cursor_pos <= copy_len ? cursor_pos : copy_len;
+}
+
+static void web_draw_control_text(solar_os_gfx_t *gfx,
+                                  const web_control_t *control,
+                                  int row_x,
+                                  int row_y,
+                                  int row_w)
+{
+    const int label_w = row_w > 230 ? 112 : 78;
+    const int field_x = row_x + label_w + 4;
+    const int field_y = row_y + 3;
+    const int field_w = row_x + row_w - field_x;
+    if (field_w < 36) {
+        return;
+    }
+
+    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_SMALL);
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+    web_draw_text_clipped(gfx,
+                          row_x,
+                          row_y + 14,
+                          web_control_label(control, "text"),
+                          (size_t)(label_w / 6));
+
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
+    solar_os_gfx_fill_rect(gfx, field_x, field_y, field_w, WEB_CONTROL_FIELD_HEIGHT);
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+    solar_os_gfx_rect(gfx, field_x, field_y, field_w, WEB_CONTROL_FIELD_HEIGHT);
+    if (web_control_is_editing(control)) {
+        solar_os_gfx_rect(gfx, field_x - 1, field_y - 1, field_w + 2, WEB_CONTROL_FIELD_HEIGHT + 2);
+    }
+
+    const size_t visible_chars = field_w > 8 ? (size_t)((field_w - 8) / 6) : 0;
+    char value[WEB_CONTROL_VALUE_MAX];
+    const size_t cursor_pos = web_copy_control_value_window(control,
+                                                           value,
+                                                           sizeof(value),
+                                                           visible_chars);
+    web_draw_text_clipped(gfx,
+                          field_x + 3,
+                          field_y + 12,
+                          value,
+                          visible_chars);
+
+    if (web_control_is_editing(control)) {
+        const int cursor_x = field_x + 3 + (int)cursor_pos * 6;
+        if (cursor_x < field_x + field_w - 2) {
+            solar_os_gfx_line(gfx,
+                              cursor_x,
+                              field_y + 3,
+                              cursor_x,
+                              field_y + WEB_CONTROL_FIELD_HEIGHT - 4);
+        }
+    }
+}
+
+static void web_draw_control_button(solar_os_gfx_t *gfx,
+                                    const web_control_t *control,
+                                    int row_x,
+                                    int row_y,
+                                    int row_w,
+                                    bool selected)
+{
+    const char *label = web_control_label(control, "submit");
+    const size_t label_len = strlen(label);
+    int button_w = (int)label_len * 6 + 20;
+    if (button_w < 54) {
+        button_w = 54;
+    }
+    if (button_w > row_w) {
+        button_w = row_w;
+    }
+
+    const int button_h = 16;
+    const int button_x = row_x;
+    const int button_y = row_y + 3;
+    solar_os_gfx_set_color(gfx, selected ? SOLAR_OS_GFX_COLOR_BLACK : SOLAR_OS_GFX_COLOR_LIGHT);
+    solar_os_gfx_fill_rect(gfx, button_x, button_y, button_w, button_h);
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+    solar_os_gfx_rect(gfx, button_x, button_y, button_w, button_h);
+
+    const size_t max_chars = button_w > 10 ? (size_t)((button_w - 10) / 6) : 0;
+    const int text_w = (int)((label_len < max_chars ? label_len : max_chars) * 6U);
+    const int text_x = button_x + (button_w - text_w) / 2;
+    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_BOLD);
+    solar_os_gfx_set_color(gfx, selected ? SOLAR_OS_GFX_COLOR_WHITE : SOLAR_OS_GFX_COLOR_BLACK);
+    web_draw_text_clipped(gfx, text_x, button_y + 12, label, max_chars);
+}
+
+static void web_draw_control_choice(solar_os_gfx_t *gfx,
+                                    const web_control_t *control,
+                                    int row_x,
+                                    int row_y,
+                                    int row_w)
+{
+    const int box_x = row_x + 2;
+    const int box_y = row_y + 5;
+    const int center_x = box_x + WEB_CONTROL_BOX_SIZE / 2;
+    const int center_y = box_y + WEB_CONTROL_BOX_SIZE / 2;
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
+    if (control->type == WEB_CONTROL_RADIO) {
+        solar_os_gfx_fill_circle(gfx, center_x, center_y, WEB_CONTROL_BOX_SIZE / 2);
+        solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+        solar_os_gfx_circle(gfx, center_x, center_y, WEB_CONTROL_BOX_SIZE / 2);
+        if (control->checked) {
+            solar_os_gfx_fill_circle(gfx, center_x, center_y, 3);
+        }
+    } else {
+        solar_os_gfx_fill_rect(gfx, box_x, box_y, WEB_CONTROL_BOX_SIZE, WEB_CONTROL_BOX_SIZE);
+        solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+        solar_os_gfx_rect(gfx, box_x, box_y, WEB_CONTROL_BOX_SIZE, WEB_CONTROL_BOX_SIZE);
+        if (control->checked) {
+            solar_os_gfx_line(gfx, box_x + 2, box_y + 6, box_x + 5, box_y + 9);
+            solar_os_gfx_line(gfx, box_x + 5, box_y + 9, box_x + 10, box_y + 2);
+        }
+    }
+
+    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_SMALL);
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+    web_draw_text_clipped(gfx,
+                          box_x + WEB_CONTROL_BOX_SIZE + 7,
+                          row_y + 14,
+                          web_control_label(control, control->type == WEB_CONTROL_RADIO ? "radio" : "checkbox"),
+                          row_w > WEB_CONTROL_BOX_SIZE + 12 ?
+                              (size_t)((row_w - WEB_CONTROL_BOX_SIZE - 12) / 6) :
+                              0);
+}
+
+static void web_draw_control_widget(solar_os_gfx_t *gfx,
+                                    const web_control_t *control,
+                                    int row_x,
+                                    int row_y,
+                                    int row_w,
+                                    bool selected)
+{
+    if (gfx == NULL || control == NULL || row_w <= 0) {
         return;
     }
 
     switch (control->type) {
     case WEB_CONTROL_TEXT:
-        snprintf(out,
-                 out_len,
-                 "%s: [%s%s]",
-                 control->label[0] != '\0' ? control->label : "text",
-                 control->value,
-                 web.editing &&
-                         web.edit_control >= 0 &&
-                         web.edit_control < (int)web.control_count &&
-                         control == &web.controls[web.edit_control] ?
-                     "_" :
-                     "");
+        web_draw_control_text(gfx, control, row_x, row_y, row_w);
         break;
     case WEB_CONTROL_CHECKBOX:
-        snprintf(out,
-                 out_len,
-                 "[%c] %s",
-                 control->checked ? 'x' : ' ',
-                 control->label[0] != '\0' ? control->label : control->name);
-        break;
     case WEB_CONTROL_RADIO:
-        snprintf(out,
-                 out_len,
-                 "(%c) %s",
-                 control->checked ? '*' : ' ',
-                 control->label[0] != '\0' ? control->label : control->name);
+        web_draw_control_choice(gfx, control, row_x, row_y, row_w);
         break;
     case WEB_CONTROL_SUBMIT:
-        snprintf(out,
-                 out_len,
-                 "[ %s ]",
-                 control->label[0] != '\0' ? control->label : "submit");
+        web_draw_control_button(gfx, control, row_x, row_y, row_w, selected);
         break;
     case WEB_CONTROL_HIDDEN:
     default:
@@ -2180,16 +2480,27 @@ static void web_render(solar_os_context_t *ctx)
                                       max_chars);
             }
         } else if (line->control_index >= 0 && line->control_index < (int)web.control_count) {
-            char display[WEB_LINE_MAX];
-            web_control_display(&web.controls[line->control_index], display, sizeof(display));
-            solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_BOLD);
-            web_draw_text_clipped(gfx, WEB_MARGIN_X, y + WEB_TEXT_BASELINE, display, max_chars);
+            web_draw_control_widget(gfx,
+                                    &web.controls[line->control_index],
+                                    WEB_MARGIN_X,
+                                    y,
+                                    width > 2 * WEB_MARGIN_X ? width - 2 * WEB_MARGIN_X : width,
+                                    selected);
         } else {
             solar_os_gfx_set_font(gfx,
                                   line->style == WEB_LINE_HEADING || line->style == WEB_LINE_LINK ?
                                       SOLAR_OS_GFX_FONT_BOLD :
                                       SOLAR_OS_GFX_FONT_SMALL);
             web_draw_text_clipped(gfx, WEB_MARGIN_X, y + WEB_TEXT_BASELINE, line->text, max_chars);
+            if (line->link_index >= 0 && line->text[0] != '\0') {
+                const size_t len = strlen(line->text);
+                const size_t chars = len < max_chars ? len : max_chars;
+                solar_os_gfx_line(gfx,
+                                  WEB_MARGIN_X,
+                                  y + WEB_TEXT_BASELINE + 2,
+                                  WEB_MARGIN_X + (int)chars * 6,
+                                  y + WEB_TEXT_BASELINE + 2);
+            }
         }
         y += line_height;
     }
