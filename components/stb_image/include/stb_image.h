@@ -4189,6 +4189,17 @@ typedef struct
    stbi__zhuffman z_length, z_distance;
 } stbi__zbuf;
 
+static stbi__zbuf *stbi__zbuf_alloc(const char *buffer, int len)
+{
+   stbi__zbuf *z = (stbi__zbuf*) stbi__malloc(sizeof(*z));
+   if (!z)
+      return NULL;
+   memset(z, 0, sizeof(*z));
+   z->zbuffer = (stbi_uc *) buffer;
+   z->zbuffer_end = (stbi_uc *) buffer + len;
+   return z;
+}
+
 stbi_inline static int stbi__zeof(stbi__zbuf *z)
 {
    return (z->zbuffer >= z->zbuffer_end);
@@ -4359,10 +4370,13 @@ static int stbi__parse_huffman_block(stbi__zbuf *a)
 static int stbi__compute_huffman_codes(stbi__zbuf *a)
 {
    static const stbi_uc length_dezigzag[19] = { 16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15 };
-   stbi__zhuffman z_codelength;
+   stbi__zhuffman *z_codelength = (stbi__zhuffman*) stbi__malloc(sizeof(*z_codelength));
    stbi_uc lencodes[286+32+137];//padding for maximum single op
    stbi_uc codelength_sizes[19];
    int i,n;
+
+   if (!z_codelength)
+      return stbi__err("outofmem", "Out of memory");
 
    int hlit  = stbi__zreceive(a,5) + 257;
    int hdist = stbi__zreceive(a,5) + 1;
@@ -4374,32 +4388,46 @@ static int stbi__compute_huffman_codes(stbi__zbuf *a)
       int s = stbi__zreceive(a,3);
       codelength_sizes[length_dezigzag[i]] = (stbi_uc) s;
    }
-   if (!stbi__zbuild_huffman(&z_codelength, codelength_sizes, 19)) return 0;
+   if (!stbi__zbuild_huffman(z_codelength, codelength_sizes, 19)) {
+      STBI_FREE(z_codelength);
+      return 0;
+   }
 
    n = 0;
    while (n < ntot) {
-      int c = stbi__zhuffman_decode(a, &z_codelength);
-      if (c < 0 || c >= 19) return stbi__err("bad codelengths", "Corrupt PNG");
+      int c = stbi__zhuffman_decode(a, z_codelength);
+      if (c < 0 || c >= 19) {
+         STBI_FREE(z_codelength);
+         return stbi__err("bad codelengths", "Corrupt PNG");
+      }
       if (c < 16)
          lencodes[n++] = (stbi_uc) c;
       else {
          stbi_uc fill = 0;
          if (c == 16) {
             c = stbi__zreceive(a,2)+3;
-            if (n == 0) return stbi__err("bad codelengths", "Corrupt PNG");
+            if (n == 0) {
+               STBI_FREE(z_codelength);
+               return stbi__err("bad codelengths", "Corrupt PNG");
+            }
             fill = lencodes[n-1];
          } else if (c == 17) {
             c = stbi__zreceive(a,3)+3;
          } else if (c == 18) {
             c = stbi__zreceive(a,7)+11;
          } else {
+            STBI_FREE(z_codelength);
             return stbi__err("bad codelengths", "Corrupt PNG");
          }
-         if (ntot - n < c) return stbi__err("bad codelengths", "Corrupt PNG");
+         if (ntot - n < c) {
+            STBI_FREE(z_codelength);
+            return stbi__err("bad codelengths", "Corrupt PNG");
+         }
          memset(lencodes+n, fill, c);
          n += c;
       }
    }
+   STBI_FREE(z_codelength);
    if (n != ntot) return stbi__err("bad codelengths","Corrupt PNG");
    if (!stbi__zbuild_huffman(&a->z_length, lencodes, hlit)) return 0;
    if (!stbi__zbuild_huffman(&a->z_distance, lencodes+hlit, hdist)) return 0;
@@ -4519,16 +4547,22 @@ static int stbi__do_zlib(stbi__zbuf *a, char *obuf, int olen, int exp, int parse
 
 STBIDEF char *stbi_zlib_decode_malloc_guesssize(const char *buffer, int len, int initial_size, int *outlen)
 {
-   stbi__zbuf a;
+   stbi__zbuf *a;
    char *p = (char *) stbi__malloc(initial_size);
    if (p == NULL) return NULL;
-   a.zbuffer = (stbi_uc *) buffer;
-   a.zbuffer_end = (stbi_uc *) buffer + len;
-   if (stbi__do_zlib(&a, p, initial_size, 1, 1)) {
-      if (outlen) *outlen = (int) (a.zout - a.zout_start);
-      return a.zout_start;
+   a = stbi__zbuf_alloc(buffer, len);
+   if (a == NULL) {
+      STBI_FREE(p);
+      return NULL;
+   }
+   if (stbi__do_zlib(a, p, initial_size, 1, 1)) {
+      char *result = a->zout_start;
+      if (outlen) *outlen = (int) (a->zout - a->zout_start);
+      STBI_FREE(a);
+      return result;
    } else {
-      STBI_FREE(a.zout_start);
+      STBI_FREE(a->zout_start);
+      STBI_FREE(a);
       return NULL;
    }
 }
@@ -4540,56 +4574,74 @@ STBIDEF char *stbi_zlib_decode_malloc(char const *buffer, int len, int *outlen)
 
 STBIDEF char *stbi_zlib_decode_malloc_guesssize_headerflag(const char *buffer, int len, int initial_size, int *outlen, int parse_header)
 {
-   stbi__zbuf a;
+   stbi__zbuf *a;
    char *p = (char *) stbi__malloc(initial_size);
    if (p == NULL) return NULL;
-   a.zbuffer = (stbi_uc *) buffer;
-   a.zbuffer_end = (stbi_uc *) buffer + len;
-   if (stbi__do_zlib(&a, p, initial_size, 1, parse_header)) {
-      if (outlen) *outlen = (int) (a.zout - a.zout_start);
-      return a.zout_start;
+   a = stbi__zbuf_alloc(buffer, len);
+   if (a == NULL) {
+      STBI_FREE(p);
+      return NULL;
+   }
+   if (stbi__do_zlib(a, p, initial_size, 1, parse_header)) {
+      char *result = a->zout_start;
+      if (outlen) *outlen = (int) (a->zout - a->zout_start);
+      STBI_FREE(a);
+      return result;
    } else {
-      STBI_FREE(a.zout_start);
+      STBI_FREE(a->zout_start);
+      STBI_FREE(a);
       return NULL;
    }
 }
 
 STBIDEF int stbi_zlib_decode_buffer(char *obuffer, int olen, char const *ibuffer, int ilen)
 {
-   stbi__zbuf a;
-   a.zbuffer = (stbi_uc *) ibuffer;
-   a.zbuffer_end = (stbi_uc *) ibuffer + ilen;
-   if (stbi__do_zlib(&a, obuffer, olen, 0, 1))
-      return (int) (a.zout - a.zout_start);
-   else
+   stbi__zbuf *a = stbi__zbuf_alloc(ibuffer, ilen);
+   int result;
+   if (a == NULL)
       return -1;
+   if (stbi__do_zlib(a, obuffer, olen, 0, 1))
+      result = (int) (a->zout - a->zout_start);
+   else
+      result = -1;
+   STBI_FREE(a);
+   return result;
 }
 
 STBIDEF char *stbi_zlib_decode_noheader_malloc(char const *buffer, int len, int *outlen)
 {
-   stbi__zbuf a;
+   stbi__zbuf *a;
    char *p = (char *) stbi__malloc(16384);
    if (p == NULL) return NULL;
-   a.zbuffer = (stbi_uc *) buffer;
-   a.zbuffer_end = (stbi_uc *) buffer+len;
-   if (stbi__do_zlib(&a, p, 16384, 1, 0)) {
-      if (outlen) *outlen = (int) (a.zout - a.zout_start);
-      return a.zout_start;
+   a = stbi__zbuf_alloc(buffer, len);
+   if (a == NULL) {
+      STBI_FREE(p);
+      return NULL;
+   }
+   if (stbi__do_zlib(a, p, 16384, 1, 0)) {
+      char *result = a->zout_start;
+      if (outlen) *outlen = (int) (a->zout - a->zout_start);
+      STBI_FREE(a);
+      return result;
    } else {
-      STBI_FREE(a.zout_start);
+      STBI_FREE(a->zout_start);
+      STBI_FREE(a);
       return NULL;
    }
 }
 
 STBIDEF int stbi_zlib_decode_noheader_buffer(char *obuffer, int olen, const char *ibuffer, int ilen)
 {
-   stbi__zbuf a;
-   a.zbuffer = (stbi_uc *) ibuffer;
-   a.zbuffer_end = (stbi_uc *) ibuffer + ilen;
-   if (stbi__do_zlib(&a, obuffer, olen, 0, 0))
-      return (int) (a.zout - a.zout_start);
-   else
+   stbi__zbuf *a = stbi__zbuf_alloc(ibuffer, ilen);
+   int result;
+   if (a == NULL)
       return -1;
+   if (stbi__do_zlib(a, obuffer, olen, 0, 0))
+      result = (int) (a->zout - a->zout_start);
+   else
+      result = -1;
+   STBI_FREE(a);
+   return result;
 }
 #endif
 

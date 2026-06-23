@@ -33,6 +33,7 @@ static void *solar_os_stbi_realloc_sized(void *ptr, size_t old_size, size_t new_
 }
 
 #define STBI_ONLY_JPEG
+#define STBI_ONLY_PNG
 #define STBI_ONLY_GIF
 #define STBI_NO_STDIO
 #define STBI_NO_LINEAR

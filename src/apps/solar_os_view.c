@@ -600,6 +600,16 @@ static esp_err_t view_decode_file(const char *path, view_image_t *image)
             err = view_decode_bmp(file, image);
         } else if (signature[0] == 0xff && signature[1] == 0xd8) {
             err = view_decode_stb(file, image, "JPEG");
+        } else if (signature_len >= 8U &&
+                   signature[0] == 0x89 &&
+                   signature[1] == 'P' &&
+                   signature[2] == 'N' &&
+                   signature[3] == 'G' &&
+                   signature[4] == 0x0d &&
+                   signature[5] == 0x0a &&
+                   signature[6] == 0x1a &&
+                   signature[7] == 0x0a) {
+            err = view_decode_stb(file, image, "PNG");
         } else if (signature[0] == 'G' && signature[1] == 'I') {
             err = view_decode_stb(file, image, "GIF");
         } else if (signature_len >= 12U &&
@@ -623,7 +633,7 @@ static esp_err_t view_decode_file(const char *path, view_image_t *image)
 static void view_usage(solar_os_terminal_t *term)
 {
     solar_os_terminal_writeln(term, "usage: view [-fit|-actual] <image>");
-    solar_os_terminal_writeln(term, "formats: JPG, JPEG, GIF, WEBP, BMP, PBM, PGM, PPM");
+    solar_os_terminal_writeln(term, "formats: JPG, JPEG, PNG, GIF, WEBP, BMP, PBM, PGM, PPM");
     solar_os_terminal_writeln(term, "keys: arrows pan, f toggles fit/actual");
     solar_os_terminal_writeln(term, "CTRL+ALT+DEL exits");
 }
