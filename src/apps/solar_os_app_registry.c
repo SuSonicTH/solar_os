@@ -17,6 +17,7 @@
 #include "solar_os_scp_app.h"
 #include "solar_os_ssh_app.h"
 #include "solar_os_view.h"
+#include "solar_os_web.h"
 
 static const solar_os_app_registry_entry_t registered_apps[] = {
     {"aplay", "play WAV audio", &solar_os_aplay_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
@@ -33,6 +34,7 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
     {"scp", "SCP file copy", &solar_os_scp_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
     {"ssh", "SSH client", &solar_os_ssh_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
     {"view", "image viewer", &solar_os_view_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
+    {"web", "simple web browser", &solar_os_web_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
 };
 
 static const size_t registered_app_count = sizeof(registered_apps) / sizeof(registered_apps[0]);

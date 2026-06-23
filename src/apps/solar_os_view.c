@@ -20,6 +20,7 @@
 #include "solar_os_storage.h"
 #include "solar_os_stb_image.h"
 #include "solar_os_terminal.h"
+#include "solar_os_webp_decoder.h"
 
 #define VIEW_MAX_PIXELS (2U * 1024U * 1024U)
 #define VIEW_PAN_STEP 32
@@ -168,12 +169,12 @@ static esp_err_t view_read_stream(FILE *file, uint8_t **out_data, size_t *out_le
     return ESP_OK;
 }
 
-static esp_err_t view_decode_jpeg(FILE *file, view_image_t *image)
+static esp_err_t view_decode_stb(FILE *file, view_image_t *image, const char *format)
 {
-    uint8_t *jpeg_data = NULL;
-    size_t jpeg_len = 0;
+    uint8_t *image_data = NULL;
+    size_t image_len = 0;
 
-    esp_err_t err = view_read_stream(file, &jpeg_data, &jpeg_len);
+    esp_err_t err = view_read_stream(file, &image_data, &image_len);
     if (err != ESP_OK) {
         return err;
     }
@@ -181,35 +182,79 @@ static esp_err_t view_decode_jpeg(FILE *file, view_image_t *image)
     uint8_t *gray = NULL;
     uint32_t width = 0;
     uint32_t height = 0;
-    err = solar_os_stb_jpeg_decode_gray(jpeg_data,
-                                        jpeg_len,
-                                        VIEW_MAX_PIXELS,
-                                        &gray,
-                                        &width,
-                                        &height);
+    err = solar_os_stb_decode_gray(image_data,
+                                   image_len,
+                                   VIEW_MAX_PIXELS,
+                                   &gray,
+                                   &width,
+                                   &height);
     if (err == ESP_OK) {
         view_error_detail[0] = '\0';
         view_free_image(image);
         image->width = width;
         image->height = height;
         image->gray = gray;
-        SOLAR_OS_LOGI(TAG, "decoded JPEG %" PRIu32 "x%" PRIu32 " bytes=%u",
+        SOLAR_OS_LOGI(TAG, "decoded %s %" PRIu32 "x%" PRIu32 " bytes=%u",
+                 format != NULL ? format : "image",
                  width,
                  height,
-                 (unsigned)jpeg_len);
+                 (unsigned)image_len);
     } else {
         snprintf(view_error_detail,
                  sizeof(view_error_detail),
-                 "JPEG: %s",
+                 "%s: %s",
+                 format != NULL ? format : "image",
                  solar_os_stb_failure_reason());
         SOLAR_OS_LOGW(TAG,
-                 "JPEG decode failed: %s reason=%s bytes=%u",
+                 "%s decode failed: %s reason=%s bytes=%u",
+                 format != NULL ? format : "image",
                  esp_err_to_name(err),
                  solar_os_stb_failure_reason(),
-                 (unsigned)jpeg_len);
+                 (unsigned)image_len);
     }
 
-    heap_caps_free(jpeg_data);
+    heap_caps_free(image_data);
+    return err;
+}
+
+static esp_err_t view_decode_webp(FILE *file, view_image_t *image)
+{
+    uint8_t *image_data = NULL;
+    size_t image_len = 0;
+
+    esp_err_t err = view_read_stream(file, &image_data, &image_len);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    uint8_t *gray = NULL;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    err = solar_os_webp_decode_gray(image_data,
+                                    image_len,
+                                    VIEW_MAX_PIXELS,
+                                    &gray,
+                                    &width,
+                                    &height);
+    if (err == ESP_OK) {
+        view_error_detail[0] = '\0';
+        view_free_image(image);
+        image->width = width;
+        image->height = height;
+        image->gray = gray;
+        SOLAR_OS_LOGI(TAG, "decoded WebP %" PRIu32 "x%" PRIu32 " bytes=%u",
+                 width,
+                 height,
+                 (unsigned)image_len);
+    } else {
+        snprintf(view_error_detail, sizeof(view_error_detail), "WebP decode failed");
+        SOLAR_OS_LOGW(TAG,
+                 "WebP decode failed: %s bytes=%u",
+                 esp_err_to_name(err),
+                 (unsigned)image_len);
+    }
+
+    heap_caps_free(image_data);
     return err;
 }
 
@@ -547,13 +592,30 @@ static esp_err_t view_decode_file(const char *path, view_image_t *image)
     }
 
     view_error_detail[0] = '\0';
-    uint8_t signature[2];
+    uint8_t signature[12] = {0};
     esp_err_t err = ESP_ERR_NOT_SUPPORTED;
-    if (view_read_exact(file, signature, sizeof(signature))) {
+    const size_t signature_len = fread(signature, 1, sizeof(signature), file);
+    if (signature_len >= 2U) {
         if (signature[0] == 'B' && signature[1] == 'M') {
             err = view_decode_bmp(file, image);
         } else if (signature[0] == 0xff && signature[1] == 0xd8) {
-            err = view_decode_jpeg(file, image);
+            err = view_decode_stb(file, image, "JPEG");
+        } else if (signature_len >= 8U &&
+                   signature[0] == 0x89 &&
+                   signature[1] == 'P' &&
+                   signature[2] == 'N' &&
+                   signature[3] == 'G' &&
+                   signature[4] == 0x0d &&
+                   signature[5] == 0x0a &&
+                   signature[6] == 0x1a &&
+                   signature[7] == 0x0a) {
+            err = view_decode_stb(file, image, "PNG");
+        } else if (signature[0] == 'G' && signature[1] == 'I') {
+            err = view_decode_stb(file, image, "GIF");
+        } else if (signature_len >= 12U &&
+                   memcmp(signature, "RIFF", 4) == 0 &&
+                   memcmp(signature + 8, "WEBP", 4) == 0) {
+            err = view_decode_webp(file, image);
         } else if (signature[0] == 'P' && signature[1] >= '1' && signature[1] <= '6') {
             err = view_decode_pnm(file, image);
         }
@@ -571,7 +633,7 @@ static esp_err_t view_decode_file(const char *path, view_image_t *image)
 static void view_usage(solar_os_terminal_t *term)
 {
     solar_os_terminal_writeln(term, "usage: view [-fit|-actual] <image>");
-    solar_os_terminal_writeln(term, "formats: JPG, JPEG, BMP, PBM, PGM, PPM");
+    solar_os_terminal_writeln(term, "formats: JPG, JPEG, PNG, GIF, WEBP, BMP, PBM, PGM, PPM");
     solar_os_terminal_writeln(term, "keys: arrows pan, f toggles fit/actual");
     solar_os_terminal_writeln(term, "CTRL+ALT+DEL exits");
 }
