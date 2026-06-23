@@ -33,6 +33,7 @@ static void *solar_os_stbi_realloc_sized(void *ptr, size_t old_size, size_t new_
 }
 
 #define STBI_ONLY_JPEG
+#define STBI_ONLY_GIF
 #define STBI_NO_STDIO
 #define STBI_NO_LINEAR
 #define STBI_NO_HDR
@@ -43,12 +44,12 @@ static void *solar_os_stbi_realloc_sized(void *ptr, size_t old_size, size_t new_
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-esp_err_t solar_os_stb_jpeg_decode_gray(const uint8_t *data,
-                                         size_t len,
-                                         uint32_t max_pixels,
-                                         uint8_t **out_gray,
-                                         uint32_t *out_width,
-                                         uint32_t *out_height)
+esp_err_t solar_os_stb_decode_gray(const uint8_t *data,
+                                   size_t len,
+                                   uint32_t max_pixels,
+                                   uint8_t **out_gray,
+                                   uint32_t *out_width,
+                                   uint32_t *out_height)
 {
     if (data == NULL || len == 0 || out_gray == NULL || out_width == NULL || out_height == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -85,6 +86,21 @@ esp_err_t solar_os_stb_jpeg_decode_gray(const uint8_t *data,
     *out_width = (uint32_t)width;
     *out_height = (uint32_t)height;
     return ESP_OK;
+}
+
+esp_err_t solar_os_stb_jpeg_decode_gray(const uint8_t *data,
+                                         size_t len,
+                                         uint32_t max_pixels,
+                                         uint8_t **out_gray,
+                                         uint32_t *out_width,
+                                         uint32_t *out_height)
+{
+    return solar_os_stb_decode_gray(data,
+                                    len,
+                                    max_pixels,
+                                    out_gray,
+                                    out_width,
+                                    out_height);
 }
 
 void solar_os_stb_image_free(void *data)

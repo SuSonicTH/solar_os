@@ -156,6 +156,9 @@ static const char *content_type_for_path(const char *path)
     if (strcmp(ext, ".gif") == 0) {
         return "image/gif";
     }
+    if (strcmp(ext, ".webp") == 0) {
+        return "image/webp";
+    }
     if (strcmp(ext, ".svg") == 0) {
         return "image/svg+xml";
     }

@@ -1,0 +1,37 @@
+idf_component_register(
+    SRCS
+        "solar_os_webp_decoder.c"
+        "libwebp/src/dec/alpha_dec.c"
+        "libwebp/src/dec/buffer_dec.c"
+        "libwebp/src/dec/frame_dec.c"
+        "libwebp/src/dec/idec_dec.c"
+        "libwebp/src/dec/io_dec.c"
+        "libwebp/src/dec/quant_dec.c"
+        "libwebp/src/dec/tree_dec.c"
+        "libwebp/src/dec/vp8_dec.c"
+        "libwebp/src/dec/vp8l_dec.c"
+        "libwebp/src/dec/webp_dec.c"
+        "libwebp/src/dsp/alpha_processing.c"
+        "libwebp/src/dsp/cpu.c"
+        "libwebp/src/dsp/dec.c"
+        "libwebp/src/dsp/dec_clip_tables.c"
+        "libwebp/src/dsp/filters.c"
+        "libwebp/src/dsp/lossless.c"
+        "libwebp/src/dsp/rescaler.c"
+        "libwebp/src/dsp/upsampling.c"
+        "libwebp/src/dsp/yuv.c"
+        "libwebp/src/utils/bit_reader_utils.c"
+        "libwebp/src/utils/color_cache_utils.c"
+        "libwebp/src/utils/filters_utils.c"
+        "libwebp/src/utils/huffman_utils.c"
+        "libwebp/src/utils/palette.c"
+        "libwebp/src/utils/quant_levels_dec_utils.c"
+        "libwebp/src/utils/rescaler_utils.c"
+        "libwebp/src/utils/random_utils.c"
+        "libwebp/src/utils/thread_utils.c"
+        "libwebp/src/utils/utils.c"
+    INCLUDE_DIRS "include" "libwebp" "libwebp/src"
+    PRIV_REQUIRES heap
+)
+
+target_compile_definitions(${COMPONENT_LIB} PRIVATE WEBP_NO_THREAD)
