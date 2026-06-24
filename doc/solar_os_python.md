@@ -290,7 +290,7 @@ print([hex(addr) for addr in solaros.i2c.scan()])
 
 UART functions expose the external UART service.
 
-- `status()`: return UART port, pins, baud rate, mode, and buffered RX bytes.
+- `status()`: return UART port, pins, baud rate, mode, `rx_buffered`, and `rx_buffered_valid`. When another owner is actively using the UART, `rx_buffered_valid` is `False` because the live RX count is not sampled.
 - `baud([rate])`: get or set baud rate.
 - `is_valid_baud(rate)`: return whether a baud rate is accepted.
 - `mode([name])`: get or set `raw` or `line` mode.

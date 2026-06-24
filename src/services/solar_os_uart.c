@@ -49,6 +49,11 @@ static void uart_unlock(void)
     }
 }
 
+static bool uart_try_lock(void)
+{
+    return uart_mutex == NULL || xSemaphoreTake(uart_mutex, 0) == pdTRUE;
+}
+
 bool solar_os_uart_is_valid_baud_rate(uint32_t baud_rate)
 {
     return baud_rate >= SOLAR_OS_UART_MIN_BAUD_RATE &&
@@ -416,7 +421,7 @@ void solar_os_uart_get_status(solar_os_uart_status_t *status)
         return;
     }
 
-    uart_lock();
+    const bool locked = uart_try_lock();
     *status = (solar_os_uart_status_t){
         .initialized = uart_initialized,
         .port_num = (int)WS_RLCD_UART_PORT,
@@ -425,14 +430,18 @@ void solar_os_uart_get_status(solar_os_uart_status_t *status)
         .baud_rate = uart_baud_rate,
         .mode = uart_mode,
         .rx_buffered = 0,
+        .rx_buffered_valid = false,
     };
-    if (uart_initialized) {
+    if (locked && uart_initialized) {
         size_t buffered = 0;
         if (uart_port_get_rx_buffered(&buffered) == ESP_OK) {
             status->rx_buffered = buffered;
+            status->rx_buffered_valid = true;
         }
     }
-    uart_unlock();
+    if (locked) {
+        uart_unlock();
+    }
 
     solar_os_port_info_t port_info;
     if (solar_os_port_get_info(SOLAR_OS_UART_PORT_NAME, &port_info) == ESP_OK) {

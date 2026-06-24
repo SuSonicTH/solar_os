@@ -50,6 +50,8 @@ Lua mirrors the Python `solaros` module structure:
 
 Lua strings are binary-safe, so byte-oriented APIs such as `uart.read`, `i2c.read_reg`, `clipboard.get`, and `mqtt.read().payload` return Lua strings.
 
+`solaros.uart.status()` includes `rx_buffered` and `rx_buffered_valid`. When another owner is actively using the UART, `rx_buffered_valid` is `false` because the live RX count is not sampled.
+
 ## TUI
 
 `solaros.tui` draws through the foreground UI queue. It exposes constants `NORMAL`, `BOLD`, `INVERSE`, plus common key constants such as `KEY_UP`, `KEY_DOWN`, `KEY_LEFT`, `KEY_RIGHT`, `KEY_ESCAPE`, `KEY_PAGE_UP`, and `KEY_PAGE_DOWN`.

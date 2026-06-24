@@ -744,6 +744,7 @@ static void solua_push_uart_status(lua_State *L, const solar_os_uart_status_t *s
     solua_set_int(L, -1, "baud_rate", status->baud_rate);
     solua_set_str(L, -1, "mode", solar_os_uart_mode_name(status->mode));
     solua_set_int(L, -1, "rx_buffered", (lua_Integer)status->rx_buffered);
+    solua_set_bool(L, -1, "rx_buffered_valid", status->rx_buffered_valid);
 }
 
 static void solua_push_job_status(lua_State *L, const solar_os_job_status_t *status)

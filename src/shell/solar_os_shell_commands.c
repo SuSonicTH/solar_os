@@ -2112,14 +2112,24 @@ void solar_os_shell_cmd_status(solar_os_context_t *ctx, int argc, char **argv)
     solar_os_shell_io_put_char(term, '\n');
     solar_os_uart_get_status(&uart_status);
     if (uart_status.initialized) {
-        solar_os_shell_io_printf(term,
-                                 "UART: UART%d TX %d RX %d, %" PRIu32 " baud, %s mode, %u buffered\n",
-                                 uart_status.port_num,
-                                 uart_status.tx_pin,
-                                 uart_status.rx_pin,
-                                 uart_status.baud_rate,
-                                 solar_os_uart_mode_name(uart_status.mode),
-                                 (unsigned)uart_status.rx_buffered);
+        if (uart_status.rx_buffered_valid) {
+            solar_os_shell_io_printf(term,
+                                     "UART: UART%d TX %d RX %d, %" PRIu32 " baud, %s mode, %u buffered\n",
+                                     uart_status.port_num,
+                                     uart_status.tx_pin,
+                                     uart_status.rx_pin,
+                                     uart_status.baud_rate,
+                                     solar_os_uart_mode_name(uart_status.mode),
+                                     (unsigned)uart_status.rx_buffered);
+        } else {
+            solar_os_shell_io_printf(term,
+                                     "UART: UART%d TX %d RX %d, %" PRIu32 " baud, %s mode, buffered busy\n",
+                                     uart_status.port_num,
+                                     uart_status.tx_pin,
+                                     uart_status.rx_pin,
+                                     uart_status.baud_rate,
+                                     solar_os_uart_mode_name(uart_status.mode));
+        }
     } else {
         solar_os_shell_io_printf(term,
                                  "UART: unavailable (UART%d TX %d RX %d)\n",
@@ -5241,7 +5251,13 @@ static void uart_print_status(solar_os_shell_io_t *term)
     solar_os_shell_io_printf(term, "Pins: TX %d, RX %d\n", status.tx_pin, status.rx_pin);
     solar_os_shell_io_printf(term, "Baud: %" PRIu32 "\n", status.baud_rate);
     solar_os_shell_io_printf(term, "Mode: %s\n", solar_os_uart_mode_name(status.mode));
-    solar_os_shell_io_printf(term, "RX buffered: %u bytes\n", (unsigned)status.rx_buffered);
+    if (status.rx_buffered_valid) {
+        solar_os_shell_io_printf(term, "RX buffered: %u bytes\n", (unsigned)status.rx_buffered);
+    } else {
+        solar_os_shell_io_printf(term,
+                                 "RX buffered: %s\n",
+                                 status.initialized ? "busy" : "unavailable");
+    }
     solar_os_shell_io_printf(term,
                              "Owner: %s\n",
                              status.port_claimed ? status.port_owner : "-");

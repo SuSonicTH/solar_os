@@ -1561,7 +1561,7 @@ static mp_obj_t solaros_uart_status(void)
     solar_os_uart_status_t status;
     solar_os_uart_get_status(&status);
 
-    mp_obj_t dict = mp_obj_new_dict(7);
+    mp_obj_t dict = mp_obj_new_dict(8);
     python_dict_store_bool(dict, "initialized", status.initialized);
     python_dict_store_int(dict, "port_num", status.port_num);
     python_dict_store_int(dict, "tx_pin", status.tx_pin);
@@ -1569,6 +1569,7 @@ static mp_obj_t solaros_uart_status(void)
     python_dict_store_uint(dict, "baud_rate", status.baud_rate);
     python_dict_store_cstr(dict, "mode", solar_os_uart_mode_name(status.mode));
     python_dict_store_uint(dict, "rx_buffered", status.rx_buffered);
+    python_dict_store_bool(dict, "rx_buffered_valid", status.rx_buffered_valid);
     return dict;
 }
 MP_DEFINE_CONST_FUN_OBJ_0(solaros_uart_status_obj, solaros_uart_status);

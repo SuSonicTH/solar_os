@@ -25,6 +25,7 @@ typedef struct {
     uint32_t baud_rate;
     solar_os_uart_mode_t mode;
     size_t rx_buffered;
+    bool rx_buffered_valid;
     bool port_claimed;
     char port_owner[SOLAR_OS_PORT_OWNER_MAX];
 } solar_os_uart_status_t;
