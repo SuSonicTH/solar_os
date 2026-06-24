@@ -237,6 +237,8 @@ Examples:
 stream list
 stream status battery
 daq start battery /logs/battery.csv --rate 60
+daq start temperature humidity battery /logs/env.csv --rate 60
+daq start /logs/env.csv temperature humidity battery --rate 60
 daq start gpio17 /logs/key.csv --changes
 daq start uart0 /logs/serial.csv --rate-ms 25
 daq start uart0 /logs/serial.bin --raw --rate-ms 25
@@ -244,7 +246,7 @@ daq status
 daq stop
 ```
 
-`daq start` appends by default and writes a CSV header when creating a new CSV file. Use `--replace` to overwrite. Units are encoded in CSV column names, not repeated on every row. Each acquired row or raw byte chunk is flushed and synced to the filesystem before the job continues. `--changes` stores only changed values, which is useful for GPIO state logging. `--raw` is byte-stream only and writes received bytes directly to the file without timestamps, CSV framing, or a header.
+`daq start` appends by default and writes a CSV header when creating a new CSV file. Use `--replace` to overwrite. Units are encoded in CSV column names, not repeated on every row. Each acquired row or raw byte chunk is flushed and synced to the filesystem before the job continues. `--changes` stores only changed values for single-stream CSV capture. `--raw` is byte-stream only, single-stream only, and writes received bytes directly to the file without timestamps, CSV framing, or a header.
 
 ## OTA Release Layout
 
@@ -279,7 +281,7 @@ Jobs run in the background while a foreground app or shell remains active.
 
 - `batmon`: Periodically sample battery voltage and estimate trend/time left. Start with `job start batmon [interval-sec]`; default is `60`. SolarOS smooths ADC readings and uses a rolling trend as the main power-state signal: discharging means battery, charging means external power. Voltage above `battery max_voltage` is a fast external-power shortcut. If three consecutive samples are at or below `battery min_voltage` while on battery, SolarOS requests light sleep.
 - `bridge`: Raw bidirectional byte bridge between two ports. Start with `job start bridge <port-a> <port-b>`, for example `job start bridge cdc0 uart0`.
-- `daq`: Capture one data stream to a timestamped CSV file, or a byte stream to a raw file. Start with `job start daq <stream> <file.csv> [--rate seconds|--rate-ms ms] [--changes] [--append|--replace]`; add `--raw` for direct byte-stream capture.
+- `daq`: Capture one or more data streams to a timestamped CSV file, or one byte stream to a raw file. Start with `job start daq <stream...> <file.csv> [--rate seconds|--rate-ms ms] [--append|--replace]` or `job start daq <file.csv> <stream...> [--rate seconds|--rate-ms ms]`; add `--raw` for direct single byte-stream capture.
 - `httpd`: Serve static files from a folder. Start with `job start httpd <folder>`; relative folders resolve under the default SD mount point.
 - `log`: Stream SolarOS log entries to a byte-stream port or SD file. Start with `job start log <port> [error|warn|info|debug]` or `job start log file <path> [error|warn|info|debug]`.
 - `ntp-sync`: Sync RTC time from NTP. Start with `job start ntp-sync [once] [interval-sec] [server]`; defaults are `60` and `pool.ntp.org`. With `once`, the job retries at the interval until the first successful sync, then stops itself.

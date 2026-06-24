@@ -2240,7 +2240,8 @@ static void daq_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "usage:");
     solar_os_shell_io_writeln(term, "  daq status");
     solar_os_shell_io_writeln(term, "  daq start <stream> <file> [--rate seconds]");
-    solar_os_shell_io_writeln(term, "  daq start <stream> <file> [--rate-ms ms]");
+    solar_os_shell_io_writeln(term, "  daq start <stream...> <file> [--rate-ms ms]");
+    solar_os_shell_io_writeln(term, "  daq start <file> <stream...> [--rate-ms ms]");
     solar_os_shell_io_writeln(term, "  daq start <stream> <file> [--changes] [--append|--replace]");
     solar_os_shell_io_writeln(term, "  daq start <byte-stream> <file> --raw [--append|--replace]");
     solar_os_shell_io_writeln(term, "  daq stop");
@@ -2259,9 +2260,10 @@ static void daq_print_status(solar_os_shell_io_t *term)
         return;
     }
 
-    solar_os_shell_io_printf(term, "DAQ: running %s -> %s\n", status.stream_id, status.path);
+    solar_os_shell_io_printf(term, "DAQ: running %s -> %s\n", status.stream_ids, status.path);
     solar_os_shell_io_printf(term,
-                             "Type: %s, mode %s, interval %" PRIu32 " ms, %s, %s\n",
+                             "Streams: %u, type %s, mode %s, interval %" PRIu32 " ms, %s, %s\n",
+                             (unsigned)status.stream_count,
                              solar_os_stream_type_name(status.stream_type),
                              status.raw ? "raw" : "csv",
                              status.interval_ms,
@@ -2310,7 +2312,7 @@ static void daq_print_start_error(solar_os_shell_io_t *term, const char *stream_
         return;
     }
     if (err == ESP_ERR_NOT_SUPPORTED) {
-        solar_os_shell_io_writeln(term, "daq: --raw requires a byte stream");
+        solar_os_shell_io_writeln(term, "daq: unsupported stream/mode combination");
         return;
     }
 
@@ -2341,7 +2343,7 @@ void solar_os_shell_cmd_daq(solar_os_context_t *ctx, int argc, char **argv)
     }
 
     if (strcmp(argv[1], "start") == 0) {
-        if (argc < 4 || argc > SOLAR_OS_APP_ARG_MAX) {
+        if (argc < 4 || argc > SOLAR_OS_APP_ARG_MAX + 1) {
             daq_print_usage(term);
             return;
         }
@@ -2354,7 +2356,7 @@ void solar_os_shell_cmd_daq(solar_os_context_t *ctx, int argc, char **argv)
 
         const esp_err_t err = solar_os_jobs_start(ctx, "daq", argc - 1, job_argv);
         if (err == ESP_OK) {
-            solar_os_shell_io_printf(term, "daq: started %s -> %s\n", argv[2], argv[3]);
+            solar_os_shell_io_writeln(term, "daq: started");
         } else {
             daq_print_start_error(term, argv[2], err);
         }
