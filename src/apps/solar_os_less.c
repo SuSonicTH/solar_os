@@ -21,6 +21,7 @@
 #define LESS_SEARCH_MAX 64
 #define LESS_MESSAGE_MAX 72
 #define LESS_TAB_WIDTH 4
+#define READER_SOFT_LINE_MIN 40U
 #define READER_STATE_DIR ".reader"
 #define READER_POSITIONS_FILE "positions"
 #define READER_POSITIONS_TMP_FILE "positions.tmp"
@@ -41,8 +42,10 @@ typedef struct {
     bool error_only;
     bool remember_position;
     bool saved_text_size_valid;
+    bool reader_text_size_valid;
     less_input_mode_t input_mode;
     solar_os_terminal_text_size_t saved_text_size;
+    solar_os_terminal_text_size_t reader_text_size;
     const char *app_name;
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     char display_name[SOLAR_OS_STORAGE_PATH_MAX];
@@ -190,7 +193,7 @@ static size_t less_cell_width(uint8_t ch, size_t col)
     return 1;
 }
 
-static size_t less_visual_end(size_t offset, size_t cols, size_t *next_offset)
+static size_t less_physical_visual_end(size_t offset, size_t cols, size_t *next_offset)
 {
     if (cols == 0) {
         cols = 1;
@@ -277,6 +280,293 @@ static size_t less_visual_end(size_t offset, size_t cols, size_t *next_offset)
     return end;
 }
 
+static bool reader_line_is_blank(size_t line_start)
+{
+    const size_t end = less_line_end(line_start);
+    for (size_t i = line_start; i < end; i++) {
+        const uint8_t byte = (uint8_t)less_state.buffer[i];
+        if (byte != ' ' && byte != '\t') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static size_t reader_line_trim_start(size_t line_start)
+{
+    const size_t end = less_line_end(line_start);
+    while (line_start < end) {
+        const uint8_t byte = (uint8_t)less_state.buffer[line_start];
+        if (byte != ' ' && byte != '\t') {
+            break;
+        }
+        line_start++;
+    }
+    return line_start;
+}
+
+static size_t reader_line_trim_end(size_t line_start)
+{
+    const size_t raw_end = less_line_end(line_start);
+    size_t end = raw_end;
+    while (end > line_start) {
+        const uint8_t byte = (uint8_t)less_state.buffer[end - 1U];
+        if (byte != ' ' && byte != '\t') {
+            break;
+        }
+        end--;
+    }
+    return end;
+}
+
+static size_t reader_line_text_len(size_t line_start)
+{
+    const size_t start = reader_line_trim_start(line_start);
+    const size_t end = reader_line_trim_end(line_start);
+    return end > start ? end - start : 0;
+}
+
+static bool reader_line_is_indented(size_t line_start)
+{
+    const size_t end = less_line_end(line_start);
+    return line_start < end &&
+        (less_state.buffer[line_start] == ' ' || less_state.buffer[line_start] == '\t');
+}
+
+static bool reader_line_has_tab(size_t line_start)
+{
+    const size_t end = less_line_end(line_start);
+    for (size_t i = line_start; i < end; i++) {
+        if (less_state.buffer[i] == '\t') {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool reader_line_starts_list(size_t line_start)
+{
+    const size_t start = reader_line_trim_start(line_start);
+    const size_t end = less_line_end(line_start);
+    if (start >= end) {
+        return false;
+    }
+
+    const uint8_t first = (uint8_t)less_state.buffer[start];
+    if ((first == '-' || first == '*' || first == '+') &&
+        start + 1U < end &&
+        (less_state.buffer[start + 1U] == ' ' || less_state.buffer[start + 1U] == '\t')) {
+        return true;
+    }
+    if (first == '>' || first == '#') {
+        return true;
+    }
+    if (isdigit(first)) {
+        size_t p = start + 1U;
+        while (p < end && isdigit((unsigned char)less_state.buffer[p])) {
+            p++;
+        }
+        return p > start &&
+            p + 1U < end &&
+            (less_state.buffer[p] == '.' || less_state.buffer[p] == ')') &&
+            (less_state.buffer[p + 1U] == ' ' || less_state.buffer[p + 1U] == '\t');
+    }
+    return false;
+}
+
+static bool reader_lines_joinable(size_t current_line, size_t next_line)
+{
+    if (current_line >= less_state.len ||
+        next_line >= less_state.len ||
+        reader_line_is_blank(current_line) ||
+        reader_line_is_blank(next_line) ||
+        reader_line_is_indented(current_line) ||
+        reader_line_is_indented(next_line) ||
+        reader_line_has_tab(current_line) ||
+        reader_line_has_tab(next_line) ||
+        reader_line_starts_list(current_line) ||
+        reader_line_starts_list(next_line) ||
+        reader_line_text_len(current_line) < READER_SOFT_LINE_MIN) {
+        return false;
+    }
+    return true;
+}
+
+static bool reader_flow_space(uint8_t byte)
+{
+    return byte == ' ' || byte == '\r' || byte == '\n';
+}
+
+static size_t reader_paragraph_start(size_t offset)
+{
+    if (offset > less_state.len) {
+        offset = less_state.len;
+    }
+
+    size_t line = less_line_start_for(offset);
+    if (line >= less_state.len || reader_line_is_blank(line)) {
+        return line;
+    }
+
+    while (line > 0) {
+        const size_t previous = less_previous_line_start(line);
+        if (previous == line || !reader_lines_joinable(previous, line)) {
+            break;
+        }
+        line = previous;
+    }
+    return line;
+}
+
+static size_t reader_paragraph_end(size_t offset)
+{
+    if (offset >= less_state.len) {
+        return less_state.len;
+    }
+
+    size_t line = less_line_start_for(offset);
+    if (reader_line_is_blank(line)) {
+        return less_line_end(line);
+    }
+
+    while (line < less_state.len && !reader_line_is_blank(line)) {
+        const size_t next = less_next_line_start(line);
+        if (next <= line) {
+            break;
+        }
+        if (!reader_lines_joinable(line, next)) {
+            break;
+        }
+        line = next;
+    }
+    return less_line_end(line);
+}
+
+static size_t reader_skip_flow_space(size_t offset, size_t limit)
+{
+    while (offset < limit && reader_flow_space((uint8_t)less_state.buffer[offset])) {
+        offset++;
+    }
+    return offset;
+}
+
+static size_t reader_word_end(size_t offset, size_t limit)
+{
+    while (offset < limit && !reader_flow_space((uint8_t)less_state.buffer[offset])) {
+        offset++;
+    }
+    return offset;
+}
+
+static size_t reader_source_width(size_t start, size_t end, size_t col)
+{
+    size_t width = 0;
+    for (size_t i = start; i < end; i++) {
+        const size_t span = less_cell_width((uint8_t)less_state.buffer[i], col + width);
+        width += span > 0 ? span : 1U;
+    }
+    return width;
+}
+
+static size_t reader_source_fit(size_t start, size_t end, size_t cols)
+{
+    size_t col = 0;
+    size_t fit = start;
+
+    for (size_t i = start; i < end; i++) {
+        const uint8_t byte = (uint8_t)less_state.buffer[i];
+        const size_t span = less_cell_width(byte, col);
+        if (col > 0 && col + span > cols) {
+            break;
+        }
+        col += span;
+        fit = i + 1U;
+        if (col >= cols) {
+            break;
+        }
+    }
+
+    return fit > start ? fit : (start < end ? start + 1U : start);
+}
+
+static size_t reader_visual_end(size_t offset, size_t cols, size_t *next_offset)
+{
+    if (cols == 0) {
+        cols = 1;
+    }
+    if (next_offset != NULL) {
+        *next_offset = offset;
+    }
+    if (offset >= less_state.len) {
+        if (next_offset != NULL) {
+            *next_offset = less_state.len;
+        }
+        return less_state.len;
+    }
+
+    const size_t line_start = less_line_start_for(offset);
+    if (reader_line_is_blank(line_start)) {
+        if (next_offset != NULL) {
+            *next_offset = less_next_line_start(line_start);
+        }
+        return line_start;
+    }
+    if (reader_line_is_indented(line_start) ||
+        reader_line_has_tab(line_start) ||
+        reader_line_starts_list(line_start)) {
+        return less_physical_visual_end(offset, cols, next_offset);
+    }
+
+    const size_t paragraph_end = reader_paragraph_end(offset);
+    size_t pos = reader_skip_flow_space(offset, paragraph_end);
+    size_t end = pos;
+    size_t col = 0;
+
+    while (pos < paragraph_end) {
+        const size_t word_start = reader_skip_flow_space(pos, paragraph_end);
+        if (word_start >= paragraph_end) {
+            break;
+        }
+        const size_t word_end = reader_word_end(word_start, paragraph_end);
+        const size_t word_width = reader_source_width(word_start, word_end, col > 0 ? col + 1U : col);
+        const size_t prefix = col > 0 ? 1U : 0U;
+
+        if (col > 0 && col + prefix + word_width > cols) {
+            if (next_offset != NULL) {
+                *next_offset = word_start;
+            }
+            return end;
+        }
+
+        if (col == 0 && word_width > cols) {
+            const size_t split = reader_source_fit(word_start, word_end, cols);
+            if (next_offset != NULL) {
+                *next_offset = split;
+            }
+            return split;
+        }
+
+        col += prefix + word_width;
+        end = word_end;
+        pos = word_end;
+    }
+
+    if (next_offset != NULL) {
+        const size_t next = reader_skip_flow_space(end, paragraph_end);
+        *next_offset = next < paragraph_end ? next : less_next_line_start(less_line_start_for(paragraph_end));
+    }
+    return end;
+}
+
+static size_t less_visual_end(size_t offset, size_t cols, size_t *next_offset)
+{
+    if (less_state.remember_position) {
+        return reader_visual_end(offset, cols, next_offset);
+    }
+
+    return less_physical_visual_end(offset, cols, next_offset);
+}
+
 static size_t less_next_visual_start(size_t offset, size_t cols)
 {
     size_t next = offset;
@@ -293,7 +583,9 @@ static size_t less_visual_start_for_offset(size_t offset, size_t cols)
         offset = less_state.len;
     }
 
-    size_t current = less_line_start_for(offset);
+    size_t current = less_state.remember_position ?
+        reader_paragraph_start(offset) :
+        less_line_start_for(offset);
     while (current < offset) {
         const size_t next = less_next_visual_start(current, cols);
         if (next > offset || next <= current) {
@@ -304,6 +596,38 @@ static size_t less_visual_start_for_offset(size_t offset, size_t cols)
     return current;
 }
 
+static size_t reader_previous_visual_start(size_t offset, size_t cols)
+{
+    if (offset == 0 || less_state.len == 0) {
+        return 0;
+    }
+    if (offset > less_state.len) {
+        offset = less_state.len;
+    }
+
+    size_t start = reader_paragraph_start(offset);
+    if (start >= offset && offset > 0) {
+        const size_t previous_line = less_previous_line_start(offset);
+        if (previous_line < offset) {
+            start = reader_paragraph_start(previous_line);
+        } else {
+            start = 0;
+        }
+    }
+
+    size_t previous = start;
+    size_t current = start;
+    while (current < offset) {
+        const size_t next = less_next_visual_start(current, cols);
+        if (next >= offset || next <= current) {
+            return previous;
+        }
+        previous = current;
+        current = next;
+    }
+    return previous;
+}
+
 static size_t less_previous_visual_start(size_t offset, size_t cols)
 {
     if (offset == 0 || less_state.len == 0) {
@@ -311,6 +635,9 @@ static size_t less_previous_visual_start(size_t offset, size_t cols)
     }
     if (offset > less_state.len) {
         offset = less_state.len;
+    }
+    if (less_state.remember_position) {
+        return reader_previous_visual_start(offset, cols);
     }
 
     size_t line_start = less_line_start_for(offset);
@@ -390,35 +717,123 @@ static void less_render_header(solar_os_shell_io_t *io)
     less_write_inverse_line(io, header);
 }
 
-static void less_render_text_row(solar_os_shell_io_t *io, size_t row, size_t row_start)
+static bool less_source_highlighted(size_t offset)
+{
+    return less_state.match_valid &&
+        offset >= less_state.match_offset &&
+        offset < less_state.match_offset + less_state.search_len;
+}
+
+static void less_write_source_byte(solar_os_shell_io_t *io,
+                                   uint8_t byte,
+                                   size_t source_offset,
+                                   size_t *visual_col,
+                                   size_t *written,
+                                   size_t cols)
+{
+    const bool is_tab = byte == '\t';
+    const size_t span = less_cell_width(byte, *visual_col);
+
+    solar_os_shell_io_set_inverse(io, less_source_highlighted(source_offset));
+    for (size_t j = 0; j < span && *written < cols; j++) {
+        if (is_tab) {
+            solar_os_shell_io_put_char(io, ' ');
+        } else {
+            solar_os_shell_io_put_char(io, less_is_printable(byte) ? (char)byte : '.');
+        }
+        (*written)++;
+        (*visual_col)++;
+    }
+}
+
+static void less_render_physical_text_row(solar_os_shell_io_t *io, size_t row, size_t row_start)
 {
     const size_t cols = less_cols_or_one(io);
     size_t next = row_start;
-    const size_t row_end = less_visual_end(row_start, cols, &next);
+    const size_t row_end = less_physical_visual_end(row_start, cols, &next);
     size_t visual_col = 0;
     size_t written = 0;
 
     solar_os_shell_io_set_cursor(io, row, 0);
     for (size_t i = row_start; i < row_end && written < cols; i++) {
         const uint8_t byte = (uint8_t)less_state.buffer[i];
-        const bool is_tab = byte == '\t';
-        const size_t span = less_cell_width(byte, visual_col);
-        const bool highlighted = less_state.match_valid &&
-            i >= less_state.match_offset &&
-            i < less_state.match_offset + less_state.search_len;
+        less_write_source_byte(io, byte, i, &visual_col, &written, cols);
+    }
+    solar_os_shell_io_set_inverse(io, false);
+}
 
-        solar_os_shell_io_set_inverse(io, highlighted);
-        for (size_t j = 0; j < span && written < cols; j++) {
-            if (is_tab) {
-                solar_os_shell_io_put_char(io, ' ');
-            } else {
-                solar_os_shell_io_put_char(io, less_is_printable(byte) ? (char)byte : '.');
-            }
-            written++;
+static void reader_render_text_row(solar_os_shell_io_t *io, size_t row, size_t row_start)
+{
+    const size_t cols = less_cols_or_one(io);
+    size_t visual_col = 0;
+    size_t written = 0;
+
+    solar_os_shell_io_set_cursor(io, row, 0);
+    if (row_start >= less_state.len) {
+        return;
+    }
+
+    const size_t line_start = less_line_start_for(row_start);
+    if (reader_line_is_blank(line_start)) {
+        return;
+    }
+    if (reader_line_is_indented(line_start) ||
+        reader_line_has_tab(line_start) ||
+        reader_line_starts_list(line_start)) {
+        less_render_physical_text_row(io, row, row_start);
+        return;
+    }
+
+    const size_t paragraph_end = reader_paragraph_end(row_start);
+    size_t pos = reader_skip_flow_space(row_start, paragraph_end);
+
+    while (pos < paragraph_end && written < cols) {
+        const size_t word_start = reader_skip_flow_space(pos, paragraph_end);
+        if (word_start >= paragraph_end) {
+            break;
+        }
+        const size_t word_end = reader_word_end(word_start, paragraph_end);
+        const size_t word_width = reader_source_width(word_start,
+                                                      word_end,
+                                                      visual_col > 0 ? visual_col + 1U : visual_col);
+        const size_t prefix = visual_col > 0 ? 1U : 0U;
+
+        if (visual_col > 0 && visual_col + prefix + word_width > cols) {
+            break;
+        }
+
+        if (visual_col > 0) {
+            solar_os_shell_io_set_inverse(io, false);
+            solar_os_shell_io_put_char(io, ' ');
             visual_col++;
+            written++;
+        }
+
+        for (size_t i = word_start; i < word_end && written < cols; i++) {
+            less_write_source_byte(io,
+                                   (uint8_t)less_state.buffer[i],
+                                   i,
+                                   &visual_col,
+                                   &written,
+                                   cols);
+        }
+
+        pos = word_end;
+        if (prefix == 0U && word_width > cols) {
+            break;
         }
     }
     solar_os_shell_io_set_inverse(io, false);
+}
+
+static void less_render_text_row(solar_os_shell_io_t *io, size_t row, size_t row_start)
+{
+    if (less_state.remember_position) {
+        reader_render_text_row(io, row, row_start);
+        return;
+    }
+
+    less_render_physical_text_row(io, row, row_start);
 }
 
 static void less_render_error(solar_os_context_t *ctx)
@@ -573,6 +988,8 @@ static bool reader_adjust_text_size(solar_os_context_t *ctx, int delta)
         return true;
     }
 
+    less_state.reader_text_size = text_sizes[next];
+    less_state.reader_text_size_valid = true;
     less_state.top_offset = less_visual_start_for_offset(anchor, less_cols_or_one(less_io(ctx)));
     char message[LESS_MESSAGE_MAX];
     snprintf(message,
@@ -820,20 +1237,47 @@ static esp_err_t reader_ensure_state_dir(void)
 static bool reader_parse_position_line(char *line,
                                        uint64_t *offset,
                                        uint64_t *len,
+                                       solar_os_terminal_text_size_t *text_size,
+                                       bool *text_size_valid,
                                        char **path)
 {
     int path_index = 0;
 
-    if (line == NULL || offset == NULL || len == NULL || path == NULL) {
+    if (line == NULL ||
+        offset == NULL ||
+        len == NULL ||
+        text_size == NULL ||
+        text_size_valid == NULL ||
+        path == NULL) {
         return false;
     }
+    *text_size_valid = false;
     if (sscanf(line, "%" SCNu64 " %" SCNu64 " %n", offset, len, &path_index) != 2 ||
         path_index <= 0 ||
         line[path_index] == '\0') {
         return false;
     }
 
-    *path = &line[path_index];
+    char *rest = &line[path_index];
+    if (strncmp(rest, "ts=", 3) == 0) {
+        char *token = rest + 3;
+        char *token_end = token;
+        while (*token_end != '\0' && !isspace((unsigned char)*token_end)) {
+            token_end++;
+        }
+        if (*token_end != '\0') {
+            *token_end++ = '\0';
+            while (isspace((unsigned char)*token_end)) {
+                token_end++;
+            }
+            if (solar_os_terminal_parse_text_size(token, text_size)) {
+                *text_size_valid = true;
+                rest = token_end;
+            }
+        }
+    }
+
+    *path = rest;
     (*path)[strcspn(*path, "\r\n")] = '\0';
     return (*path)[0] != '\0';
 }
@@ -856,12 +1300,25 @@ static void reader_load_position(solar_os_context_t *ctx)
     while (fgets(line, sizeof(line), file) != NULL) {
         uint64_t saved_offset = 0;
         uint64_t saved_len = 0;
+        solar_os_terminal_text_size_t saved_text_size = SOLAR_OS_TERMINAL_TEXT_SIZE_14;
+        bool saved_text_size_valid = false;
         char *saved_path = NULL;
-        if (!reader_parse_position_line(line, &saved_offset, &saved_len, &saved_path) ||
+        if (!reader_parse_position_line(line,
+                                        &saved_offset,
+                                        &saved_len,
+                                        &saved_text_size,
+                                        &saved_text_size_valid,
+                                        &saved_path) ||
             strcmp(saved_path, less_state.path) != 0) {
             continue;
         }
 
+        if (saved_text_size_valid &&
+            solar_os_shell_io_kind(less_io(ctx)) == SOLAR_OS_SHELL_IO_KIND_TERMINAL &&
+            solar_os_terminal_set_text_size_transient(less_terminal(ctx), saved_text_size) == ESP_OK) {
+            less_state.reader_text_size = saved_text_size;
+            less_state.reader_text_size_valid = true;
+        }
         if (saved_offset > less_state.len) {
             saved_offset = less_state.len;
         }
@@ -880,6 +1337,8 @@ static bool reader_same_position_path(const char *line)
     char copy[READER_POSITION_LINE_MAX];
     uint64_t offset = 0;
     uint64_t len = 0;
+    solar_os_terminal_text_size_t text_size = SOLAR_OS_TERMINAL_TEXT_SIZE_14;
+    bool text_size_valid = false;
     char *path = NULL;
 
     if (line == NULL) {
@@ -887,7 +1346,7 @@ static bool reader_same_position_path(const char *line)
     }
 
     strlcpy(copy, line, sizeof(copy));
-    return reader_parse_position_line(copy, &offset, &len, &path) &&
+    return reader_parse_position_line(copy, &offset, &len, &text_size, &text_size_valid, &path) &&
         strcmp(path, less_state.path) == 0;
 }
 
@@ -924,11 +1383,20 @@ static void reader_save_position(void)
         fclose(source);
     }
 
-    fprintf(dest,
-            "%" PRIu64 " %" PRIu64 " %s\n",
-            (uint64_t)less_state.top_offset,
-            (uint64_t)less_state.len,
-            less_state.path);
+    if (less_state.reader_text_size_valid) {
+        fprintf(dest,
+                "%" PRIu64 " %" PRIu64 " ts=%s %s\n",
+                (uint64_t)less_state.top_offset,
+                (uint64_t)less_state.len,
+                solar_os_terminal_text_size_name(less_state.reader_text_size),
+                less_state.path);
+    } else {
+        fprintf(dest,
+                "%" PRIu64 " %" PRIu64 " %s\n",
+                (uint64_t)less_state.top_offset,
+                (uint64_t)less_state.len,
+                less_state.path);
+    }
     const bool ok = ferror(dest) == 0;
     fclose(dest);
 
@@ -952,8 +1420,12 @@ static esp_err_t less_start_common(solar_os_context_t *ctx,
     less_state.remember_position = remember_position;
     if (remember_position &&
         solar_os_shell_io_kind(less_io(ctx)) == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
-        less_state.saved_text_size = solar_os_terminal_text_size(less_terminal(ctx));
+        const solar_os_terminal_text_size_t current_text_size =
+            solar_os_terminal_text_size(less_terminal(ctx));
+        less_state.saved_text_size = current_text_size;
         less_state.saved_text_size_valid = true;
+        less_state.reader_text_size = current_text_size;
+        less_state.reader_text_size_valid = true;
     }
 
     const int argc = solar_os_context_argc(ctx);
