@@ -18,6 +18,15 @@ set(U8G2_CLIB_SRCS
     "src/clib/u8x8_string.c"
 )
 
+set(SOLAR_OS_GENERATED_FONT_DIR "${CMAKE_CURRENT_LIST_DIR}/../../fonts/build/u8g2")
+file(GLOB SOLAR_OS_GENERATED_FONT_SRCS
+    "${SOLAR_OS_GENERATED_FONT_DIR}/u8g2_font_solar_os_default_*_tf.c"
+)
+if(SOLAR_OS_GENERATED_FONT_SRCS)
+    list(SORT SOLAR_OS_GENERATED_FONT_SRCS)
+    list(APPEND U8G2_CLIB_SRCS ${SOLAR_OS_GENERATED_FONT_SRCS})
+endif()
+
 idf_component_register(
     SRCS ${U8G2_CLIB_SRCS}
     INCLUDE_DIRS "src/clib"

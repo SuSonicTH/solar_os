@@ -1,0 +1,6 @@
+/bdfconv
+*.o
+*.s
+*.tga
+*.png
+*.c.tmp
