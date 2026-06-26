@@ -47,6 +47,9 @@
 #define SHELL_LOG_FOLLOW_POLL_MS 250U
 #define SHELL_LOG_FOLLOW_BATCH 8
 #define SHELL_ZIP_SOURCE_MAX 64
+#define SHELL_ZIP_TASK_STACK 24576
+#define SHELL_ZIP_TASK_PRIORITY 4
+#define SHELL_ZIP_WAIT_POLL_MS 20U
 #define SHELL_ARRAY_COUNT(array) (sizeof(array) / sizeof((array)[0]))
 #define SHELL_COMPLETION_ANY "*"
 
@@ -4021,6 +4024,16 @@ typedef struct {
     bool list;
 } shell_zip_progress_t;
 
+typedef struct {
+    solar_os_shell_io_t *term;
+    const char *archive;
+    const char **sources;
+    size_t source_count;
+    bool store_only;
+    volatile bool done;
+    esp_err_t result;
+} shell_zip_create_request_t;
+
 static const char *shell_zip_method_name(uint16_t method)
 {
     switch (method) {
@@ -4064,6 +4077,54 @@ static void shell_zip_progress(const solar_os_zip_event_info_t *info, void *user
     case SOLAR_OS_ZIP_EVENT_LIST:
         break;
     }
+}
+
+static void shell_zip_create_task(void *arg)
+{
+    shell_zip_create_request_t *request = (shell_zip_create_request_t *)arg;
+    shell_zip_progress_t progress = {
+        .term = request->term,
+        .list = false,
+    };
+    const solar_os_zip_options_t options = {
+        .store_only = request->store_only,
+        .progress = shell_zip_progress,
+        .user = &progress,
+    };
+
+    request->result = solar_os_zip_create(request->archive,
+                                          request->sources,
+                                          request->source_count,
+                                          &options);
+    request->done = true;
+    vTaskDelete(NULL);
+}
+
+static esp_err_t shell_zip_run_create_task(shell_zip_create_request_t *request)
+{
+    TaskHandle_t task = NULL;
+    request->done = false;
+    request->result = ESP_FAIL;
+
+    const BaseType_t created = xTaskCreatePinnedToCore(shell_zip_create_task,
+                                                       "solar_os_zip",
+                                                       SHELL_ZIP_TASK_STACK,
+                                                       request,
+                                                       SHELL_ZIP_TASK_PRIORITY,
+                                                       &task,
+                                                       tskNO_AFFINITY);
+    if (created != pdPASS) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    TickType_t poll_ticks = pdMS_TO_TICKS(SHELL_ZIP_WAIT_POLL_MS);
+    if (poll_ticks == 0) {
+        poll_ticks = 1;
+    }
+    while (!request->done) {
+        vTaskDelay(poll_ticks);
+    }
+    return request->result;
 }
 
 static const char *shell_zip_error_reason(esp_err_t err)
@@ -4211,19 +4272,14 @@ static void cmd_zip(solar_os_context_t *ctx, int argc, char **argv)
     }
 
     if (!source_list.had_error) {
-        shell_zip_progress_t progress = {
+        shell_zip_create_request_t request = {
             .term = term,
-            .list = false,
-        };
-        const solar_os_zip_options_t options = {
+            .archive = archive,
+            .sources = source_list.sources,
+            .source_count = source_list.count,
             .store_only = store_only,
-            .progress = shell_zip_progress,
-            .user = &progress,
         };
-        const esp_err_t err = solar_os_zip_create(archive,
-                                                  source_list.sources,
-                                                  source_list.count,
-                                                  &options);
+        const esp_err_t err = shell_zip_run_create_task(&request);
         if (err != ESP_OK) {
             shell_zip_print_error(term, "zip", err);
         }

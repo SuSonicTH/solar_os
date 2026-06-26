@@ -11,6 +11,8 @@
 #include <sys/stat.h>
 
 #include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "miniz.h"
 #include "solar_os_storage.h"
 
@@ -29,6 +31,11 @@
 #define ZIP_IO_BUFFER_SIZE 4096U
 #define ZIP_INFLATE_DICT_SIZE TINFL_LZ_DICT_SIZE
 #define ZIP_NAME_MAX SOLAR_OS_STORAGE_PATH_MAX
+
+static void zip_yield(void)
+{
+    vTaskDelay(pdMS_TO_TICKS(1));
+}
 
 typedef struct {
     char name[ZIP_NAME_MAX];
@@ -395,6 +402,7 @@ static esp_err_t zip_store_file(zip_writer_t *writer,
             }
             *uncompressed_size += (uint32_t)bytes_read;
             *compressed_size += (uint32_t)bytes_read;
+            zip_yield();
         }
 
         if (bytes_read < ZIP_IO_BUFFER_SIZE) {
@@ -475,6 +483,7 @@ static esp_err_t zip_deflate_file(zip_writer_t *writer,
                 break;
             }
         } while (input_pos < bytes_read || (eof && status != TDEFL_STATUS_DONE));
+        zip_yield();
     } while (!eof || status != TDEFL_STATUS_DONE);
 
     heap_caps_free(compressor);
@@ -621,6 +630,7 @@ static esp_err_t zip_add_path(zip_writer_t *writer,
         if (ret != ESP_OK) {
             break;
         }
+        zip_yield();
     }
 
     const int saved_errno = errno;
@@ -672,6 +682,7 @@ static esp_err_t zip_writer_finish(zip_writer_t *writer)
         if (!zip_write_central_entry(writer->file, &writer->entries[i])) {
             return ESP_FAIL;
         }
+        zip_yield();
     }
 
     if (!zip_tell_u32(writer->file, &central_end) || central_end < central_offset) {
@@ -869,6 +880,7 @@ static esp_err_t zip_copy_stored(FILE *archive,
         *crc32 = (uint32_t)mz_crc32(*crc32, buffer, bytes_read);
         *bytes_written += (uint32_t)bytes_read;
         remaining -= (uint32_t)bytes_read;
+        zip_yield();
     }
     return ESP_OK;
 }
@@ -945,6 +957,7 @@ static esp_err_t zip_inflate_file(FILE *archive,
             heap_caps_free(decompressor);
             return ESP_FAIL;
         }
+        zip_yield();
     }
 
     heap_caps_free(decompressor);
@@ -1120,6 +1133,7 @@ esp_err_t solar_os_zip_list(const char *archive_path,
                         entry.method,
                         entry.compressed_size,
                         entry.uncompressed_size);
+        zip_yield();
     }
 
     zip_reader_close(&reader);
@@ -1176,6 +1190,7 @@ esp_err_t solar_os_zip_extract(const char *archive_path,
             ret = ESP_FAIL;
             break;
         }
+        zip_yield();
     }
 
     heap_caps_free(input);
