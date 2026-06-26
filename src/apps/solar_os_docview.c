@@ -522,7 +522,6 @@ static void docview_render(solar_os_context_t *ctx)
     const int screen_w = (int)solar_os_gfx_width(gfx);
     const int screen_h = (int)solar_os_gfx_height(gfx);
     solar_os_gfx_clear(gfx, SOLAR_OS_GFX_COLOR_WHITE);
-    docview_draw_header(gfx);
 
     solar_os_doc_view_t view = {
         .x = DOCVIEW_MARGIN_X,
@@ -557,6 +556,7 @@ static void docview_render(solar_os_context_t *ctx)
         docview_draw_scrollbar(gfx, &view);
     }
 
+    docview_draw_header(gfx);
     solar_os_gfx_present(gfx);
 }
 
