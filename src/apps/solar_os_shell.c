@@ -1992,6 +1992,7 @@ static bool shell_is_path_command(const char *command)
 #endif
 #if SOLAR_OS_PACKAGE_UTILS
            strcmp(command, "edit") == 0 ||
+           strcmp(command, "files") == 0 ||
            strcmp(command, "less") == 0 ||
            strcmp(command, "reader") == 0 ||
            strcmp(command, "sheet") == 0 ||

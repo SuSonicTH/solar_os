@@ -226,6 +226,7 @@ if(SOLAR_OS_PACKAGE_UTILS)
         "apps/solar_os_com.c"
         "apps/solar_os_reader.c"
         "apps/solar_os_edit.c"
+        "apps/solar_os_files.c"
         "apps/solar_os_less.c"
         "apps/solar_os_notes.c"
         "apps/solar_os_plot.c"
