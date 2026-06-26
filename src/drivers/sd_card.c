@@ -15,7 +15,7 @@
 #include "ff.h"
 #include "sdmmc_cmd.h"
 #include "sdkconfig.h"
-#include "waveshare_esp32_s3_rlcd_4_2.h"
+#include "solar_os_board.h"
 
 #define SD_CARD_MAX_MOUNTS FF_VOLUMES
 #define SD_CARD_SECTOR_BYTES 512U
@@ -94,9 +94,9 @@ static void sd_card_make_slot_config(sdmmc_slot_config_t *slot_config)
     *slot_config = (sdmmc_slot_config_t)SDMMC_SLOT_CONFIG_DEFAULT();
     slot_config->width = 1;
 #ifdef CONFIG_SOC_SDMMC_USE_GPIO_MATRIX
-    slot_config->clk = WS_RLCD_PIN_SDMMC_CLK;
-    slot_config->cmd = WS_RLCD_PIN_SDMMC_CMD;
-    slot_config->d0 = WS_RLCD_PIN_SDMMC_D0;
+    slot_config->clk = SOLAR_OS_BOARD_PIN_SDMMC_CLK;
+    slot_config->cmd = SOLAR_OS_BOARD_PIN_SDMMC_CMD;
+    slot_config->d0 = SOLAR_OS_BOARD_PIN_SDMMC_D0;
 #endif
     slot_config->flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
 }

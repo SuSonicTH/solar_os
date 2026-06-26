@@ -7,7 +7,7 @@
 #include "esp_codec_dev_defaults.h"
 #include "esp_log.h"
 #include "i2c_bus.h"
-#include "waveshare_esp32_s3_rlcd_4_2.h"
+#include "solar_os_board.h"
 
 #define AUDIO_CODEC_I2S_MCLK_MULTIPLE I2S_MCLK_MULTIPLE_256
 #define AUDIO_CODEC_TDM_SLOT_MASK \
@@ -37,7 +37,7 @@ static audio_codec_board_state_t audio_codec;
 
 static esp_err_t audio_codec_i2s_init(void)
 {
-    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(WS_RLCD_I2S_PORT, I2S_ROLE_MASTER);
+    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(SOLAR_OS_BOARD_I2S_PORT, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true;
 
     esp_err_t ret = i2s_new_channel(&chan_cfg, &audio_codec.tx_handle, &audio_codec.rx_handle);
@@ -51,11 +51,11 @@ static esp_err_t audio_codec_i2s_init(void)
                                                         AUDIO_CODEC_TDM_SLOT_MASK),
         .clk_cfg = I2S_TDM_CLK_DEFAULT_CONFIG(AUDIO_CODEC_BOARD_DEFAULT_SAMPLE_RATE),
         .gpio_cfg = {
-            .mclk = WS_RLCD_PIN_I2S_MCLK,
-            .bclk = WS_RLCD_PIN_I2S_BCLK,
-            .ws = WS_RLCD_PIN_I2S_WS,
-            .dout = WS_RLCD_PIN_I2S_DOUT,
-            .din = WS_RLCD_PIN_I2S_DIN,
+            .mclk = SOLAR_OS_BOARD_PIN_I2S_MCLK,
+            .bclk = SOLAR_OS_BOARD_PIN_I2S_BCLK,
+            .ws = SOLAR_OS_BOARD_PIN_I2S_WS,
+            .dout = SOLAR_OS_BOARD_PIN_I2S_DOUT,
+            .din = SOLAR_OS_BOARD_PIN_I2S_DIN,
         },
     };
     tdm_cfg.slot_cfg.total_slot = 4;
@@ -90,7 +90,7 @@ static esp_err_t audio_codec_create_devices(void)
     audio_codec.gpio_if = gpio_if;
 
     audio_codec_i2s_cfg_t i2s_cfg = {
-        .port = WS_RLCD_I2S_PORT,
+        .port = SOLAR_OS_BOARD_I2S_PORT,
         .rx_handle = audio_codec.rx_handle,
         .tx_handle = audio_codec.tx_handle,
     };
@@ -100,7 +100,7 @@ static esp_err_t audio_codec_create_devices(void)
     }
 
     audio_codec_i2c_cfg_t out_i2c = {
-        .port = I2C_NUM_0,
+        .port = SOLAR_OS_BOARD_I2C_PORT,
         .addr = ES8311_CODEC_DEFAULT_ADDR,
         .bus_handle = i2c_handle,
     };
@@ -113,7 +113,7 @@ static esp_err_t audio_codec_create_devices(void)
         .codec_mode = ESP_CODEC_DEV_WORK_MODE_DAC,
         .ctrl_if = audio_codec.out_ctrl_if,
         .gpio_if = audio_codec.gpio_if,
-        .pa_pin = WS_RLCD_PIN_AUDIO_PA,
+        .pa_pin = SOLAR_OS_BOARD_PIN_AUDIO_PA,
         .use_mclk = true,
         .hw_gain.pa_gain = 6.0f,
     };
@@ -133,7 +133,7 @@ static esp_err_t audio_codec_create_devices(void)
     }
 
     audio_codec_i2c_cfg_t in_i2c = {
-        .port = I2C_NUM_0,
+        .port = SOLAR_OS_BOARD_I2C_PORT,
         .addr = ES7210_CODEC_DEFAULT_ADDR,
         .bus_handle = i2c_handle,
     };
@@ -224,15 +224,15 @@ esp_err_t audio_codec_board_init(void)
     audio_codec.initialized = true;
     ESP_LOGI(TAG,
              "audio ready: %s/%s I2S%d mclk=%d bclk=%d ws=%d din=%d dout=%d pa=%d",
-             WS_RLCD_AUDIO_CODEC_OUT,
-             WS_RLCD_AUDIO_CODEC_IN,
-             (int)WS_RLCD_I2S_PORT,
-             (int)WS_RLCD_PIN_I2S_MCLK,
-             (int)WS_RLCD_PIN_I2S_BCLK,
-             (int)WS_RLCD_PIN_I2S_WS,
-             (int)WS_RLCD_PIN_I2S_DIN,
-             (int)WS_RLCD_PIN_I2S_DOUT,
-             (int)WS_RLCD_PIN_AUDIO_PA);
+             SOLAR_OS_BOARD_AUDIO_CODEC_OUT,
+             SOLAR_OS_BOARD_AUDIO_CODEC_IN,
+             (int)SOLAR_OS_BOARD_I2S_PORT,
+             (int)SOLAR_OS_BOARD_PIN_I2S_MCLK,
+             (int)SOLAR_OS_BOARD_PIN_I2S_BCLK,
+             (int)SOLAR_OS_BOARD_PIN_I2S_WS,
+             (int)SOLAR_OS_BOARD_PIN_I2S_DIN,
+             (int)SOLAR_OS_BOARD_PIN_I2S_DOUT,
+             (int)SOLAR_OS_BOARD_PIN_AUDIO_PA);
     return ESP_OK;
 }
 
@@ -366,13 +366,13 @@ void audio_codec_board_get_status(audio_codec_board_status_t *status)
     status->mic_gain_db = audio_codec.initialized ?
         audio_codec.mic_gain_db :
         AUDIO_CODEC_BOARD_DEFAULT_MIC_GAIN_DB;
-    status->i2s_port = WS_RLCD_I2S_PORT;
-    status->mclk_pin = WS_RLCD_PIN_I2S_MCLK;
-    status->bclk_pin = WS_RLCD_PIN_I2S_BCLK;
-    status->ws_pin = WS_RLCD_PIN_I2S_WS;
-    status->din_pin = WS_RLCD_PIN_I2S_DIN;
-    status->dout_pin = WS_RLCD_PIN_I2S_DOUT;
-    status->pa_pin = WS_RLCD_PIN_AUDIO_PA;
-    status->output_codec = WS_RLCD_AUDIO_CODEC_OUT;
-    status->input_codec = WS_RLCD_AUDIO_CODEC_IN;
+    status->i2s_port = SOLAR_OS_BOARD_I2S_PORT;
+    status->mclk_pin = SOLAR_OS_BOARD_PIN_I2S_MCLK;
+    status->bclk_pin = SOLAR_OS_BOARD_PIN_I2S_BCLK;
+    status->ws_pin = SOLAR_OS_BOARD_PIN_I2S_WS;
+    status->din_pin = SOLAR_OS_BOARD_PIN_I2S_DIN;
+    status->dout_pin = SOLAR_OS_BOARD_PIN_I2S_DOUT;
+    status->pa_pin = SOLAR_OS_BOARD_PIN_AUDIO_PA;
+    status->output_codec = SOLAR_OS_BOARD_AUDIO_CODEC_OUT;
+    status->input_codec = SOLAR_OS_BOARD_AUDIO_CODEC_IN;
 }

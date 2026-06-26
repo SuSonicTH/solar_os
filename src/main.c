@@ -47,13 +47,18 @@
 #include "solar_os_time.h"
 #include "solar_os_uart.h"
 #include "solar_os_wifi.h"
-#include "waveshare_esp32_s3_rlcd_4_2.h"
+#include "solar_os_board.h"
 
 #define KEY_SHORT_PRESS_MIN_MS 30
 #define KEY_LONG_PRESS_MS 1200
 #define KEY_RELEASE_STABLE_MS 60
 #define KEY_RELEASE_STABLE_TIMEOUT_MS 600
-#define KEY_WAKE_MASK (1ULL << WS_RLCD_PIN_KEY)
+#define KEY_WAKE_MASK (1ULL << SOLAR_OS_BOARD_PIN_KEY)
+#if SOLAR_OS_BOARD_KEY_ACTIVE_LEVEL == 0
+#define KEY_WAKE_MODE ESP_EXT1_WAKEUP_ANY_LOW
+#else
+#define KEY_WAKE_MODE ESP_EXT1_WAKEUP_ANY_HIGH
+#endif
 #define BLE_SLEEP_DISCONNECT_TIMEOUT_MS 500
 #define APP_TICK_INTERVAL_MS 25
 #define STATUS_UPDATE_INTERVAL_MS 1000
@@ -82,6 +87,21 @@ static void update_status(void);
 static uint32_t millis_u32(void)
 {
     return (uint32_t)(esp_timer_get_time() / 1000ULL);
+}
+
+static bool key_level_is_pressed(int level)
+{
+    return level == SOLAR_OS_BOARD_KEY_ACTIVE_LEVEL;
+}
+
+static bool key_button_is_pressed(void)
+{
+    return key_level_is_pressed(gpio_get_level(SOLAR_OS_BOARD_PIN_KEY));
+}
+
+static bool key_rtc_is_pressed(void)
+{
+    return key_level_is_pressed(rtc_gpio_get_level(SOLAR_OS_BOARD_PIN_KEY));
 }
 
 static uint8_t wifi_level_from_rssi(int8_t rssi)
@@ -122,8 +142,9 @@ static void print_boot_summary(void)
     esp_chip_info(&chip_info);
     ESP_ERROR_CHECK(esp_flash_get_size(NULL, &flash_size));
 
-    SOLAR_OS_LOGI(TAG, "%s starter", WS_RLCD_BOARD_NAME);
-    SOLAR_OS_LOGI(TAG, "Module: %s", WS_RLCD_MODULE_NAME);
+    SOLAR_OS_LOGI(TAG, "%s starter", SOLAR_OS_BOARD_NAME);
+    SOLAR_OS_LOGI(TAG, "Board target: %s", SOLAR_OS_BOARD_ID);
+    SOLAR_OS_LOGI(TAG, "Module: %s", SOLAR_OS_BOARD_MODULE_NAME);
     SOLAR_OS_LOGI(TAG, "Cores: %d, revision: %d", chip_info.cores, chip_info.revision);
     SOLAR_OS_LOGI(TAG,
                   "Features: Wi-Fi=%s BLE=%s",
@@ -136,30 +157,35 @@ static void print_boot_summary(void)
 
     SOLAR_OS_LOGI(TAG,
                   "Display: %s %dx%d",
-                  WS_RLCD_DISPLAY_CONTROLLER,
-                  WS_RLCD_DISPLAY_WIDTH,
-                  WS_RLCD_DISPLAY_HEIGHT);
+                  SOLAR_OS_BOARD_DISPLAY_CONTROLLER,
+                  SOLAR_OS_BOARD_DISPLAY_WIDTH,
+                  SOLAR_OS_BOARD_DISPLAY_HEIGHT);
     SOLAR_OS_LOGI(TAG,
                   "Display pins: MOSI=%d SCK=%d DC=%d CS=%d RST=%d TE=%d",
-                  WS_RLCD_PIN_LCD_MOSI,
-                  WS_RLCD_PIN_LCD_SCK,
-                  WS_RLCD_PIN_LCD_DC,
-                  WS_RLCD_PIN_LCD_CS,
-                  WS_RLCD_PIN_LCD_RST,
-                  WS_RLCD_PIN_LCD_TE);
-    SOLAR_OS_LOGI(TAG, "I2C pins: SDA=%d SCL=%d", WS_RLCD_PIN_I2C_SDA, WS_RLCD_PIN_I2C_SCL);
+                  SOLAR_OS_BOARD_PIN_LCD_MOSI,
+                  SOLAR_OS_BOARD_PIN_LCD_SCK,
+                  SOLAR_OS_BOARD_PIN_LCD_DC,
+                  SOLAR_OS_BOARD_PIN_LCD_CS,
+                  SOLAR_OS_BOARD_PIN_LCD_RST,
+                  SOLAR_OS_BOARD_PIN_LCD_TE);
+    SOLAR_OS_LOGI(TAG,
+                  "I2C%d pins: SDA=%d SCL=%d",
+                  (int)SOLAR_OS_BOARD_I2C_PORT,
+                  SOLAR_OS_BOARD_PIN_I2C_SDA,
+                  SOLAR_OS_BOARD_PIN_I2C_SCL);
     SOLAR_OS_LOGI(TAG,
                   "SDMMC pins: CLK=%d CMD=%d D0=%d",
-                  WS_RLCD_PIN_SDMMC_CLK,
-                  WS_RLCD_PIN_SDMMC_CMD,
-                  WS_RLCD_PIN_SDMMC_D0);
+                  SOLAR_OS_BOARD_PIN_SDMMC_CLK,
+                  SOLAR_OS_BOARD_PIN_SDMMC_CMD,
+                  SOLAR_OS_BOARD_PIN_SDMMC_D0);
     SOLAR_OS_LOGI(TAG,
                   "UART%d pins: TX=%d RX=%d",
-                  (int)WS_RLCD_UART_PORT,
-                  WS_RLCD_PIN_UART_TX,
-                  WS_RLCD_PIN_UART_RX);
-    SOLAR_OS_LOGI(TAG, "Expansion GPIOs: 0 1 2 3 17 18");
-    SOLAR_OS_LOGI(TAG, "KEY pin: %d", WS_RLCD_PIN_KEY);
+                  (int)SOLAR_OS_BOARD_UART_PORT,
+                  SOLAR_OS_BOARD_PIN_UART_TX,
+                  SOLAR_OS_BOARD_PIN_UART_RX);
+    SOLAR_OS_LOGI(TAG, "Expansion GPIOs: %s", SOLAR_OS_BOARD_EXPANSION_GPIO_LIST);
+    SOLAR_OS_LOGI(TAG, "Runtime GPIOs: %s", SOLAR_OS_BOARD_USER_GPIO_LIST);
+    SOLAR_OS_LOGI(TAG, "KEY pin: %d", SOLAR_OS_BOARD_PIN_KEY);
 }
 
 static void IRAM_ATTR key_button_isr(void *arg)
@@ -211,8 +237,8 @@ static esp_err_t key_button_configure_gpio(void)
     const gpio_config_t key_config = {
         .pin_bit_mask = KEY_WAKE_MASK,
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_up_en = SOLAR_OS_BOARD_KEY_PULL_UP ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+        .pull_down_en = SOLAR_OS_BOARD_KEY_PULL_DOWN ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_ANYEDGE,
     };
 
@@ -221,24 +247,32 @@ static esp_err_t key_button_configure_gpio(void)
 
 static esp_err_t key_prepare_rtc_wakeup(void)
 {
-    esp_err_t err = rtc_gpio_init(WS_RLCD_PIN_KEY);
+    esp_err_t err = rtc_gpio_init(SOLAR_OS_BOARD_PIN_KEY);
     if (err != ESP_OK) {
         return err;
     }
-    err = rtc_gpio_set_direction(WS_RLCD_PIN_KEY, RTC_GPIO_MODE_INPUT_ONLY);
+    err = rtc_gpio_set_direction(SOLAR_OS_BOARD_PIN_KEY, RTC_GPIO_MODE_INPUT_ONLY);
     if (err != ESP_OK) {
         return err;
     }
-    err = rtc_gpio_pullup_en(WS_RLCD_PIN_KEY);
+#if SOLAR_OS_BOARD_KEY_PULL_UP
+    err = rtc_gpio_pullup_en(SOLAR_OS_BOARD_PIN_KEY);
+#else
+    err = rtc_gpio_pullup_dis(SOLAR_OS_BOARD_PIN_KEY);
+#endif
     if (err != ESP_OK) {
         return err;
     }
-    return rtc_gpio_pulldown_dis(WS_RLCD_PIN_KEY);
+#if SOLAR_OS_BOARD_KEY_PULL_DOWN
+    return rtc_gpio_pulldown_en(SOLAR_OS_BOARD_PIN_KEY);
+#else
+    return rtc_gpio_pulldown_dis(SOLAR_OS_BOARD_PIN_KEY);
+#endif
 }
 
 static void key_restore_gpio_after_rtc(void)
 {
-    (void)rtc_gpio_deinit(WS_RLCD_PIN_KEY);
+    (void)rtc_gpio_deinit(SOLAR_OS_BOARD_PIN_KEY);
     const esp_err_t err = key_button_configure_gpio();
     if (err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "KEY digital GPIO restore failed: %s", esp_err_to_name(err));
@@ -251,7 +285,7 @@ static bool wait_key_released_stable(uint32_t stable_ms, uint32_t timeout_ms)
     uint32_t released_since_ms = 0;
 
     while ((millis_u32() - start_ms) < timeout_ms) {
-        const bool released = gpio_get_level(WS_RLCD_PIN_KEY) != 0;
+        const bool released = !key_button_is_pressed();
         const uint32_t now_ms = millis_u32();
         if (released) {
             if (released_since_ms == 0) {
@@ -274,7 +308,7 @@ static bool wait_key_rtc_released_stable(uint32_t stable_ms, uint32_t timeout_ms
     uint32_t released_since_ms = 0;
 
     while ((millis_u32() - start_ms) < timeout_ms) {
-        const bool released = rtc_gpio_get_level(WS_RLCD_PIN_KEY) != 0;
+        const bool released = !key_rtc_is_pressed();
         const uint32_t now_ms = millis_u32();
         if (released) {
             if (released_since_ms == 0) {
@@ -295,7 +329,7 @@ static void enter_light_sleep(const char *reason)
 {
     if (!wait_key_released_stable(KEY_RELEASE_STABLE_MS, KEY_RELEASE_STABLE_TIMEOUT_MS)) {
         SOLAR_OS_LOGW(TAG, "%s: sleep cancelled, key release was not stable", reason);
-        key_pressed = gpio_get_level(WS_RLCD_PIN_KEY) == 0;
+        key_pressed = key_button_is_pressed();
         key_long_press_fired = false;
         key_pressed_ms = millis_u32();
         solar_os_power_note_activity(key_pressed_ms);
@@ -318,7 +352,7 @@ static void enter_light_sleep(const char *reason)
     if (!wait_key_rtc_released_stable(KEY_RELEASE_STABLE_MS, KEY_RELEASE_STABLE_TIMEOUT_MS)) {
         SOLAR_OS_LOGW(TAG, "%s: sleep cancelled, RTC key release was not stable", reason);
         key_restore_gpio_after_rtc();
-        key_pressed = gpio_get_level(WS_RLCD_PIN_KEY) == 0;
+        key_pressed = key_button_is_pressed();
         key_long_press_fired = false;
         key_pressed_ms = millis_u32();
         solar_os_power_note_activity(key_pressed_ms);
@@ -332,7 +366,7 @@ static void enter_light_sleep(const char *reason)
         return;
     }
 
-    err = esp_sleep_enable_ext1_wakeup_io(KEY_WAKE_MASK, ESP_EXT1_WAKEUP_ANY_LOW);
+    err = esp_sleep_enable_ext1_wakeup_io(KEY_WAKE_MASK, KEY_WAKE_MODE);
     if (err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "KEY sleep source setup failed: %s", esp_err_to_name(err));
         (void)esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO);
@@ -361,7 +395,7 @@ static void enter_light_sleep(const char *reason)
     key_irq_pending = false;
     key_pressed = false;
     key_long_press_fired = false;
-    key_ignore_until_released = gpio_get_level(WS_RLCD_PIN_KEY) == 0;
+    key_ignore_until_released = key_button_is_pressed();
 
     if (err == ESP_OK) {
         SOLAR_OS_LOGI(TAG,
@@ -395,7 +429,7 @@ static void key_button_init(void)
         return;
     }
 
-    err = gpio_isr_handler_add(WS_RLCD_PIN_KEY, key_button_isr, NULL);
+    err = gpio_isr_handler_add(SOLAR_OS_BOARD_PIN_KEY, key_button_isr, NULL);
     if (err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "KEY interrupt handler unavailable: %s", esp_err_to_name(err));
         return;
@@ -411,7 +445,7 @@ static void poll_key_button(void)
     }
     key_irq_pending = false;
 
-    const bool down = gpio_get_level(WS_RLCD_PIN_KEY) == 0;
+    const bool down = key_button_is_pressed();
     const uint32_t now_ms = millis_u32();
 
     if (key_ignore_until_released) {

@@ -28,11 +28,25 @@ This project uses PlatformIO with ESP-IDF through the pioarduino Espressif32 pla
 
 ```sh
 pio run
+pio run -e waveshare_esp32_s3_rlcd_4_2
 pio run -t upload
 pio device monitor -b 115200
 ```
 
 The SolarOS version is read from `version.txt` at build time.
+
+## Board Targets
+
+The default PlatformIO environment is `waveshare_esp32_s3_rlcd_4_2`. CMake selects a SolarOS board profile from the PlatformIO environment name, or from `SOLAR_OS_BOARD` when the environment name is only an alias.
+
+To add a board target:
+
+1. Add a PlatformIO board definition in `boards/<target>.json`.
+2. Add `boards/<target>.cmake` with `SOLAR_OS_BOARD_ID`, `SOLAR_OS_BOARD_NAME`, and `SOLAR_OS_BOARD_DEFINE`.
+3. Add `include/boards/<target>.h` with the `SOLAR_OS_BOARD_*` pin and hardware metadata.
+4. Add `[env:<target>]` to `platformio.ini` and set `board = <target>`.
+
+For an alias environment, set `SOLAR_OS_BOARD=<target>` when building so CMake picks the right profile.
 
 ## Firmware Flavors
 
@@ -413,7 +427,7 @@ src/
   solar_os_jobs.c background job lifecycle and tick dispatch
 ```
 
-The shell command parser currently lives in the shell app. Board and build configuration live in `boards/`, `platformio.ini`, `sdkconfig.defaults`, and the Waveshare board header under `include/`.
+The shell command parser currently lives in the shell app. Board and build configuration live in `boards/`, `platformio.ini`, `sdkconfig.defaults`, and target headers under `include/boards/`. Runtime code includes `solar_os_board.h` instead of a board-specific header.
 
 The important rule is that drivers own hardware detail, services own policy, and apps and jobs use services. That lets shell commands, foreground applications, and background jobs share the same behavior for storage, terminal rendering, networking, identity, time, and input.
 

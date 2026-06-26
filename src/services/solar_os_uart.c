@@ -10,7 +10,7 @@
 #include "nvs.h"
 #include "solar_os_port.h"
 #include "uart_port.h"
-#include "waveshare_esp32_s3_rlcd_4_2.h"
+#include "solar_os_board.h"
 
 #define UART_NVS_NAMESPACE "uart"
 #define UART_NVS_BAUD_KEY "baud"
@@ -183,9 +183,9 @@ esp_err_t solar_os_uart_init(void)
     uart_load_config();
 
     const uart_port_config_t config = {
-        .port_num = WS_RLCD_UART_PORT,
-        .tx_pin = WS_RLCD_PIN_UART_TX,
-        .rx_pin = WS_RLCD_PIN_UART_RX,
+        .port_num = SOLAR_OS_BOARD_UART_PORT,
+        .tx_pin = SOLAR_OS_BOARD_PIN_UART_TX,
+        .rx_pin = SOLAR_OS_BOARD_PIN_UART_RX,
         .baud_rate = uart_baud_rate,
         .rx_buffer_size = UART_RX_BUFFER_SIZE,
         .tx_buffer_size = UART_TX_BUFFER_SIZE,
@@ -197,9 +197,9 @@ esp_err_t solar_os_uart_init(void)
             uart_initialized = true;
             SOLAR_OS_LOGI(TAG,
                      "UART service ready: UART%d TX=%d RX=%d baud=%" PRIu32 " mode=%s",
-                     (int)WS_RLCD_UART_PORT,
-                     (int)WS_RLCD_PIN_UART_TX,
-                     (int)WS_RLCD_PIN_UART_RX,
+                     (int)SOLAR_OS_BOARD_UART_PORT,
+                     (int)SOLAR_OS_BOARD_PIN_UART_TX,
+                     (int)SOLAR_OS_BOARD_PIN_UART_RX,
                      uart_baud_rate,
                      solar_os_uart_mode_name(uart_mode));
         } else {
@@ -424,9 +424,9 @@ void solar_os_uart_get_status(solar_os_uart_status_t *status)
     const bool locked = uart_try_lock();
     *status = (solar_os_uart_status_t){
         .initialized = uart_initialized,
-        .port_num = (int)WS_RLCD_UART_PORT,
-        .tx_pin = (int)WS_RLCD_PIN_UART_TX,
-        .rx_pin = (int)WS_RLCD_PIN_UART_RX,
+        .port_num = (int)SOLAR_OS_BOARD_UART_PORT,
+        .tx_pin = (int)SOLAR_OS_BOARD_PIN_UART_TX,
+        .rx_pin = (int)SOLAR_OS_BOARD_PIN_UART_RX,
         .baud_rate = uart_baud_rate,
         .mode = uart_mode,
         .rx_buffered = 0,

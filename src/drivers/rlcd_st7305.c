@@ -8,7 +8,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "waveshare_esp32_s3_rlcd_4_2.h"
+#include "solar_os_board.h"
 
 #define RLCD_SPI_HOST SPI2_HOST
 #define RLCD_SPI_CLOCK_HZ 24000000
@@ -69,25 +69,25 @@ static esp_err_t rlcd_write_bytes(rlcd_st7305_t *display, const uint8_t *data, s
 
 static esp_err_t rlcd_cmd_data(rlcd_st7305_t *display, uint8_t command, const uint8_t *data, size_t length)
 {
-    esp_err_t err = gpio_set_level(WS_RLCD_PIN_LCD_DC, 0);
+    esp_err_t err = gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_DC, 0);
     if (err != ESP_OK) {
         return err;
     }
 
-    err = gpio_set_level(WS_RLCD_PIN_LCD_CS, 0);
+    err = gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_CS, 0);
     if (err != ESP_OK) {
         return err;
     }
 
     err = rlcd_write_bytes(display, &command, sizeof(command));
     if (err == ESP_OK && length > 0) {
-        err = gpio_set_level(WS_RLCD_PIN_LCD_DC, 1);
+        err = gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_DC, 1);
         if (err == ESP_OK) {
             err = rlcd_write_bytes(display, data, length);
         }
     }
 
-    const esp_err_t cs_err = gpio_set_level(WS_RLCD_PIN_LCD_CS, 1);
+    const esp_err_t cs_err = gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_CS, 1);
     return err == ESP_OK ? cs_err : err;
 }
 
@@ -200,29 +200,29 @@ static bool rlcd_checked_cmd(rlcd_st7305_t *display, uint8_t command)
 
 static void rlcd_reset(void)
 {
-    gpio_set_level(WS_RLCD_PIN_LCD_RST, 1);
+    gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_RST, 1);
     vTaskDelay(pdMS_TO_TICKS(50));
-    gpio_set_level(WS_RLCD_PIN_LCD_RST, 0);
+    gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_RST, 0);
     vTaskDelay(pdMS_TO_TICKS(20));
-    gpio_set_level(WS_RLCD_PIN_LCD_RST, 1);
+    gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_RST, 1);
     vTaskDelay(pdMS_TO_TICKS(50));
 }
 
 static esp_err_t rlcd_configure_control_pins(void)
 {
     const gpio_config_t io_config = {
-        .pin_bit_mask = (1ULL << WS_RLCD_PIN_LCD_DC) |
-                        (1ULL << WS_RLCD_PIN_LCD_CS) |
-                        (1ULL << WS_RLCD_PIN_LCD_RST),
+        .pin_bit_mask = (1ULL << SOLAR_OS_BOARD_PIN_LCD_DC) |
+                        (1ULL << SOLAR_OS_BOARD_PIN_LCD_CS) |
+                        (1ULL << SOLAR_OS_BOARD_PIN_LCD_RST),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     ESP_RETURN_ON_ERROR(gpio_config(&io_config), TAG, "gpio config failed");
-    ESP_RETURN_ON_ERROR(gpio_set_level(WS_RLCD_PIN_LCD_CS, 1), TAG, "cs high failed");
-    ESP_RETURN_ON_ERROR(gpio_set_level(WS_RLCD_PIN_LCD_DC, 1), TAG, "dc high failed");
-    ESP_RETURN_ON_ERROR(gpio_set_level(WS_RLCD_PIN_LCD_RST, 1), TAG, "rst high failed");
+    ESP_RETURN_ON_ERROR(gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_CS, 1), TAG, "cs high failed");
+    ESP_RETURN_ON_ERROR(gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_DC, 1), TAG, "dc high failed");
+    ESP_RETURN_ON_ERROR(gpio_set_level(SOLAR_OS_BOARD_PIN_LCD_RST, 1), TAG, "rst high failed");
     return ESP_OK;
 }
 
@@ -418,9 +418,9 @@ esp_err_t rlcd_st7305_init(rlcd_st7305_t *display)
     ESP_RETURN_ON_ERROR(rlcd_configure_control_pins(), TAG, "control pin config failed");
 
     const spi_bus_config_t bus_config = {
-        .mosi_io_num = WS_RLCD_PIN_LCD_MOSI,
+        .mosi_io_num = SOLAR_OS_BOARD_PIN_LCD_MOSI,
         .miso_io_num = -1,
-        .sclk_io_num = WS_RLCD_PIN_LCD_SCK,
+        .sclk_io_num = SOLAR_OS_BOARD_PIN_LCD_SCK,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
         .max_transfer_sz = RLCD_MAX_TRANSFER_BYTES,

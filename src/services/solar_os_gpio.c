@@ -5,7 +5,7 @@
 
 #include "driver/gpio.h"
 #include "gpio_port.h"
-#include "waveshare_esp32_s3_rlcd_4_2.h"
+#include "solar_os_board.h"
 
 typedef struct {
     int pin;
@@ -16,14 +16,7 @@ typedef struct {
     solar_os_gpio_pull_t pull;
 } gpio_slot_t;
 
-static gpio_slot_t gpio_slots[] = {
-    {.pin = 0, .runtime_allowed = false, .role = "BOOT/download"},
-    {.pin = 1, .runtime_allowed = true, .role = "expansion"},
-    {.pin = 2, .runtime_allowed = true, .role = "expansion"},
-    {.pin = 3, .runtime_allowed = true, .role = "expansion"},
-    {.pin = 17, .runtime_allowed = true, .role = "expansion"},
-    {.pin = 18, .runtime_allowed = false, .role = "KEY"},
-};
+static gpio_slot_t gpio_slots[] = SOLAR_OS_BOARD_GPIO_SLOTS;
 
 static gpio_slot_t *find_slot(int pin)
 {
@@ -111,7 +104,7 @@ bool solar_os_gpio_is_runtime_allowed(int pin)
     const gpio_slot_t *slot = find_const_slot(pin);
     return slot != NULL &&
         slot->runtime_allowed &&
-        board_mask_contains(WS_RLCD_USER_GPIO_MASK, pin);
+        board_mask_contains(SOLAR_OS_BOARD_USER_GPIO_MASK, pin);
 }
 
 esp_err_t solar_os_gpio_configure(int pin, solar_os_gpio_mode_t mode, solar_os_gpio_pull_t pull)

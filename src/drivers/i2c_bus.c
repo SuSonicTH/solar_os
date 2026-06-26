@@ -6,7 +6,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "waveshare_esp32_s3_rlcd_4_2.h"
+#include "solar_os_board.h"
 
 #define I2C_XFER_TIMEOUT_MS 100
 
@@ -38,9 +38,9 @@ esp_err_t i2c_bus_init(void)
     }
 
     i2c_master_bus_config_t bus_config = {
-        .i2c_port = I2C_NUM_0,
-        .sda_io_num = WS_RLCD_PIN_I2C_SDA,
-        .scl_io_num = WS_RLCD_PIN_I2C_SCL,
+        .i2c_port = SOLAR_OS_BOARD_I2C_PORT,
+        .sda_io_num = SOLAR_OS_BOARD_PIN_I2C_SDA,
+        .scl_io_num = SOLAR_OS_BOARD_PIN_I2C_SCL,
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
@@ -48,9 +48,10 @@ esp_err_t i2c_bus_init(void)
 
     ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_config, &bus_handle), TAG, "new I2C bus failed");
     ESP_LOGI(TAG,
-             "I2C bus ready: SDA=%d SCL=%d speed=%" PRIu32,
-             WS_RLCD_PIN_I2C_SDA,
-             WS_RLCD_PIN_I2C_SCL,
+             "I2C bus ready: port=%d SDA=%d SCL=%d speed=%" PRIu32,
+             (int)SOLAR_OS_BOARD_I2C_PORT,
+             SOLAR_OS_BOARD_PIN_I2C_SDA,
+             SOLAR_OS_BOARD_PIN_I2C_SCL,
              SOLAR_I2C_SPEED_HZ);
 
     return ESP_OK;
@@ -82,12 +83,12 @@ uint32_t i2c_bus_get_speed_hz(void)
 
 gpio_num_t i2c_bus_get_sda_pin(void)
 {
-    return WS_RLCD_PIN_I2C_SDA;
+    return SOLAR_OS_BOARD_PIN_I2C_SDA;
 }
 
 gpio_num_t i2c_bus_get_scl_pin(void)
 {
-    return WS_RLCD_PIN_I2C_SCL;
+    return SOLAR_OS_BOARD_PIN_I2C_SCL;
 }
 
 esp_err_t i2c_bus_probe(uint8_t address)
