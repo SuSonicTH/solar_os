@@ -85,6 +85,10 @@ set(SOLAR_OS_FLAVOR_INPUT "${SOLAR_OS_PROJECT_DIR}/flavors/${SOLAR_OS_FLAVOR}.to
 if(NOT EXISTS "${SOLAR_OS_FLAVOR_INPUT}")
     message(FATAL_ERROR "SolarOS flavor not found: ${SOLAR_OS_FLAVOR_INPUT}")
 endif()
+set(SOLAR_OS_PACKAGE_CATALOG "${SOLAR_OS_PROJECT_DIR}/packages/solar_os_packages.toml")
+if(NOT EXISTS "${SOLAR_OS_PACKAGE_CATALOG}")
+    message(FATAL_ERROR "SolarOS package catalog not found: ${SOLAR_OS_PACKAGE_CATALOG}")
+endif()
 set(SOLAR_OS_GENERATED_FONT_SENTINEL
     "${SOLAR_OS_PROJECT_DIR}/fonts/build/u8g2/u8g2_font_solar_os_default_r_14_tf.c"
 )
@@ -93,6 +97,7 @@ if(NOT EXISTS "${SOLAR_OS_GENERATED_FONT_SENTINEL}")
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${SOLAR_OS_FLAVOR_INPUT}"
+    "${SOLAR_OS_PACKAGE_CATALOG}"
     "${SOLAR_OS_PROJECT_DIR}/scripts/generate_flavor_config.py"
     "${SOLAR_OS_GENERATED_FONT_SENTINEL}"
 )
@@ -113,6 +118,7 @@ execute_process(
     COMMAND "${Python3_EXECUTABLE}"
             "${SOLAR_OS_PROJECT_DIR}/scripts/generate_flavor_config.py"
             "--input" "${SOLAR_OS_FLAVOR_INPUT}"
+            "--packages" "${SOLAR_OS_PACKAGE_CATALOG}"
             "--header" "${SOLAR_OS_GENERATED_HEADER}"
             "--cmake" "${SOLAR_OS_GENERATED_CMAKE}"
     RESULT_VARIABLE SOLAR_OS_FLAVOR_GENERATE_RESULT
@@ -133,12 +139,7 @@ set(SOLAR_OS_SRCS
     "shell/solar_os_shell_commands.c"
     "shell/solar_os_shell_io.c"
     "shell/solar_os_vt100.c"
-    "jobs/solar_os_batmon_job.c"
-    "jobs/solar_os_bridge_job.c"
-    "jobs/solar_os_daq_job.c"
     "jobs/solar_os_job_registry.c"
-    "jobs/solar_os_log_job.c"
-    "jobs/solar_os_shell_job.c"
     "services/solar_os_adc.c"
     "services/solar_os_audio.c"
     "services/solar_os_battery.c"
@@ -335,75 +336,13 @@ set(SOLAR_OS_REQUIRES
     u8g2
 )
 
-if(SOLAR_OS_PACKAGE_AUDIO)
-    list(APPEND SOLAR_OS_SRCS "apps/solar_os_audio_apps.c")
-    list(APPEND SOLAR_OS_REQUIRES minimp3)
-endif()
-
-if(SOLAR_OS_PACKAGE_NET)
-    list(APPEND SOLAR_OS_SRCS
-        "apps/solar_os_chat.c"
-        "apps/solar_os_curl.c"
-        "apps/solar_os_scp.c"
-        "apps/solar_os_ssh.c"
-        "apps/solar_os_web.c"
-        "jobs/solar_os_httpd_job.c"
-        "jobs/solar_os_ntp_sync_job.c"
-        "jobs/solar_os_slip_job.c"
-        "services/solar_os_chat.c"
-        "services/solar_os_mqtt.c"
-        "services/solar_os_net.c"
-        "services/solar_os_scp.c"
-        "services/solar_os_ssh.c"
-        "services/solar_os_ssh_keys.c"
-        "services/solar_os_ssh_transport.c"
-    )
-    list(APPEND SOLAR_OS_REQUIRES
-        esp_http_server
-        mbedtls
-        mqtt
-        stb_image
-        webp_decoder
-    )
-endif()
-
-if(SOLAR_OS_PACKAGE_MEDIA)
-    list(APPEND SOLAR_OS_SRCS "apps/solar_os_view.c")
-    list(APPEND SOLAR_OS_REQUIRES stb_image webp_decoder)
-endif()
-
-if(SOLAR_OS_PACKAGE_GAMES)
-    list(APPEND SOLAR_OS_SRCS "apps/solar_os_invaders.c")
-endif()
-
-if(SOLAR_OS_PACKAGE_PYTHON)
-    list(APPEND SOLAR_OS_SRCS "apps/solar_os_python.c")
-    list(APPEND SOLAR_OS_REQUIRES micropython_embed)
-endif()
-
-if(SOLAR_OS_PACKAGE_LUA)
-    list(APPEND SOLAR_OS_SRCS "apps/solar_os_lua.c")
-    list(APPEND SOLAR_OS_REQUIRES lua)
-endif()
-
-if(SOLAR_OS_PACKAGE_UTILS)
-    list(APPEND SOLAR_OS_SRCS
-        "apps/solar_os_clock.c"
-        "apps/solar_os_com.c"
-        "apps/solar_os_reader.c"
-        "apps/solar_os_edit.c"
-        "apps/solar_os_files.c"
-        "apps/solar_os_less.c"
-        "apps/solar_os_notes.c"
-        "apps/solar_os_plot.c"
-        "apps/solar_os_sheet.c"
-    )
-endif()
-
+list(APPEND SOLAR_OS_SRCS ${SOLAR_OS_PACKAGE_SRCS})
+list(APPEND SOLAR_OS_REQUIRES ${SOLAR_OS_PACKAGE_REQUIRES})
+list(REMOVE_DUPLICATES SOLAR_OS_SRCS)
 list(REMOVE_DUPLICATES SOLAR_OS_REQUIRES)
 
 set(SOLAR_OS_FLAVOR_STAMP
-    "${SOLAR_OS_FLAVOR_NAME}:${SOLAR_OS_PACKAGE_CORE}${SOLAR_OS_PACKAGE_AUDIO}${SOLAR_OS_PACKAGE_NET}${SOLAR_OS_PACKAGE_MEDIA}${SOLAR_OS_PACKAGE_GAMES}${SOLAR_OS_PACKAGE_PYTHON}${SOLAR_OS_PACKAGE_LUA}${SOLAR_OS_PACKAGE_UTILS}"
+    "${SOLAR_OS_FLAVOR_NAME}:${SOLAR_OS_PACKAGE_LIST}"
 )
 
 idf_component_register(

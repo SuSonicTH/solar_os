@@ -352,16 +352,49 @@ void solar_os_shell_cmd_version(solar_os_context_t *ctx, int argc, char **argv)
     solar_os_shell_io_printf(term, "Packages: %s\n", SOLAR_OS_PACKAGE_LIST);
 }
 
-static void pkg_print_one(solar_os_shell_io_t *term,
-                          const char *name,
-                          bool enabled,
-                          const char *summary)
+static void pkg_print_wrapped_list(solar_os_shell_io_t *term,
+                                   const char *title,
+                                   const char *text)
 {
-    solar_os_shell_io_printf(term,
-                             "%-8s %-8s %s\n",
-                             name,
-                             enabled ? "enabled" : "disabled",
-                             summary);
+    enum { pkg_width = 76, pkg_indent = 2 };
+    size_t col = pkg_indent;
+
+    solar_os_shell_io_printf(term, "%s:\n", title);
+    solar_os_shell_io_write(term, "  ");
+    if (text == NULL || text[0] == '\0') {
+        solar_os_shell_io_writeln(term, "none");
+        return;
+    }
+
+    const char *cursor = text;
+    while (*cursor != '\0') {
+        while (*cursor == ' ') {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+
+        const char *word = cursor;
+        while (*cursor != '\0' && *cursor != ' ') {
+            cursor++;
+        }
+
+        const size_t len = (size_t)(cursor - word);
+        const bool needs_space = col > pkg_indent;
+        if (needs_space && col + 1U + len > pkg_width) {
+            solar_os_shell_io_put_char(term, '\n');
+            solar_os_shell_io_write(term, "  ");
+            col = pkg_indent;
+        } else if (needs_space) {
+            solar_os_shell_io_put_char(term, ' ');
+            col++;
+        }
+
+        solar_os_shell_io_write_len(term, word, len);
+        col += len;
+    }
+    solar_os_shell_io_put_char(term, '\n');
 }
 
 void solar_os_shell_cmd_pkg(solar_os_context_t *ctx, int argc, char **argv)
@@ -379,15 +412,8 @@ void solar_os_shell_cmd_pkg(solar_os_context_t *ctx, int argc, char **argv)
     if (SOLAR_OS_FLAVOR_DESCRIPTION[0] != '\0') {
         solar_os_shell_io_printf(term, "%s\n", SOLAR_OS_FLAVOR_DESCRIPTION);
     }
-    solar_os_shell_io_writeln(term, "Packages:");
-    pkg_print_one(term, "core", SOLAR_OS_PACKAGE_CORE, "hardware services, shell, storage, OTA");
-    pkg_print_one(term, "audio", SOLAR_OS_PACKAGE_AUDIO, "audio recorder/player apps and MP3");
-    pkg_print_one(term, "net", SOLAR_OS_PACKAGE_NET, "network apps, net tools, and network jobs");
-    pkg_print_one(term, "media", SOLAR_OS_PACKAGE_MEDIA, "image viewer and image decoders");
-    pkg_print_one(term, "games", SOLAR_OS_PACKAGE_GAMES, "built-in games");
-    pkg_print_one(term, "python", SOLAR_OS_PACKAGE_PYTHON, "MicroPython runtime");
-    pkg_print_one(term, "lua", SOLAR_OS_PACKAGE_LUA, "Lua runtime");
-    pkg_print_one(term, "utils", SOLAR_OS_PACKAGE_UTILS, "editor, pager, reader, clock, serial terminal");
+    pkg_print_wrapped_list(term, "Groups", SOLAR_OS_PACKAGE_GROUP_LIST);
+    pkg_print_wrapped_list(term, "Build units", SOLAR_OS_PACKAGE_LIST);
 }
 
 static void ota_print_usage(solar_os_shell_io_t *term)

@@ -15,7 +15,7 @@
 #include "solar_os_board_caps.h"
 #include "esp_timer.h"
 #include "solar_os_config.h"
-#if SOLAR_OS_PACKAGE_AUDIO
+#if SOLAR_OS_PACKAGE_APP_APLAY
 #include "minimp3.h"
 #endif
 #include "solar_os_storage.h"
@@ -27,7 +27,7 @@
 #define AUDIO_WAV_HEADER_BYTES 44U
 #define AUDIO_WAV_BUFFER_BYTES 4096U
 #define AUDIO_WAV_PCM_FORMAT 1U
-#if SOLAR_OS_PACKAGE_AUDIO
+#if SOLAR_OS_PACKAGE_APP_APLAY
 #define AUDIO_MP3_INPUT_BUFFER_BYTES 16384U
 #define AUDIO_MP3_PROBE_SCAN_BYTES 65536U
 #define AUDIO_MP3_OUTPUT_MIN_SAMPLE_RATE 8000U
@@ -40,7 +40,7 @@
 
 static const char *TAG = "solar_os_audio";
 
-#if SOLAR_OS_PACKAGE_AUDIO
+#if SOLAR_OS_PACKAGE_APP_APLAY
 typedef struct {
     uint32_t sample_rate;
     uint8_t channels;
@@ -266,7 +266,7 @@ static esp_err_t audio_wav_read_info_from_file(FILE *file,
     return ESP_ERR_INVALID_RESPONSE;
 }
 
-#if SOLAR_OS_PACKAGE_AUDIO
+#if SOLAR_OS_PACKAGE_APP_APLAY
 static void *audio_heap_alloc(size_t size)
 {
     void *ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -756,7 +756,7 @@ esp_err_t solar_os_audio_get_wav_info(const char *path, solar_os_audio_wav_info_
     return ret;
 }
 
-#if SOLAR_OS_PACKAGE_AUDIO
+#if SOLAR_OS_PACKAGE_APP_APLAY
 esp_err_t solar_os_audio_get_mp3_info(const char *path, solar_os_audio_wav_info_t *info)
 {
     if (path == NULL || path[0] == '\0' || info == NULL) {
@@ -1022,7 +1022,7 @@ esp_err_t solar_os_audio_play_wav(const char *path,
 #endif
 }
 
-#if SOLAR_OS_PACKAGE_AUDIO
+#if SOLAR_OS_PACKAGE_APP_APLAY
 esp_err_t solar_os_audio_play_mp3(const char *path,
                                   uint8_t volume,
                                   const solar_os_audio_wav_options_t *options,

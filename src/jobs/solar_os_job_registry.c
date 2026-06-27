@@ -4,34 +4,54 @@
 #include <string.h>
 
 #include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_JOB_BATMON
 #include "solar_os_batmon_job.h"
+#endif
+#if SOLAR_OS_PACKAGE_JOB_BRIDGE
 #include "solar_os_bridge_job.h"
+#endif
+#if SOLAR_OS_PACKAGE_JOB_DAQ
 #include "solar_os_daq_job.h"
-#if SOLAR_OS_PACKAGE_NET
+#endif
+#if SOLAR_OS_PACKAGE_JOB_HTTPD
 #include "solar_os_httpd_job.h"
 #endif
+#if SOLAR_OS_PACKAGE_JOB_LOG
 #include "solar_os_log_job.h"
-#if SOLAR_OS_PACKAGE_NET
+#endif
+#if SOLAR_OS_PACKAGE_JOB_NTP_SYNC
 #include "solar_os_ntp_sync_job.h"
 #endif
+#if SOLAR_OS_PACKAGE_JOB_SHELL
 #include "solar_os_shell_job.h"
-#if SOLAR_OS_PACKAGE_NET
+#endif
+#if SOLAR_OS_PACKAGE_JOB_SLIP
 #include "solar_os_slip_job.h"
 #endif
 
 static const solar_os_job_registry_entry_t registered_jobs[] = {
+#if SOLAR_OS_PACKAGE_JOB_BATMON
     {"batmon", "battery voltage trend monitor", &solar_os_batmon_job},
+#endif
+#if SOLAR_OS_PACKAGE_JOB_BRIDGE
     {"bridge", "raw bidirectional port bridge", &solar_os_bridge_job},
+#endif
+#if SOLAR_OS_PACKAGE_JOB_DAQ
     {"daq", "capture data streams to CSV", &solar_os_daq_job},
-#if SOLAR_OS_PACKAGE_NET
+#endif
+#if SOLAR_OS_PACKAGE_JOB_HTTPD
     {"httpd", "static HTTP file server", &solar_os_httpd_job},
 #endif
+#if SOLAR_OS_PACKAGE_JOB_LOG
     {"log", "stream SolarOS logs to a port or file", &solar_os_log_job},
-#if SOLAR_OS_PACKAGE_NET
+#endif
+#if SOLAR_OS_PACKAGE_JOB_NTP_SYNC
     {"ntp-sync", "periodic RTC NTP sync", &solar_os_ntp_sync_job},
 #endif
+#if SOLAR_OS_PACKAGE_JOB_SHELL
     {"shell", "VT100 shell on a byte-stream port", &solar_os_shell_job},
-#if SOLAR_OS_PACKAGE_NET
+#endif
+#if SOLAR_OS_PACKAGE_JOB_SLIP
     {"slip", "SLIP IPv4 gateway on a port", &solar_os_slip_job},
 #endif
 };
