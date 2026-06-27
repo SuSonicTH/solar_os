@@ -37,7 +37,7 @@ The SolarOS version is read from `version.txt` at build time.
 
 ## Board Targets
 
-The default PlatformIO environment is `waveshare_esp32_s3_rlcd_4_2`. CMake selects a SolarOS board profile from the PlatformIO environment name, or from `SOLAR_OS_BOARD` when the environment name is only an alias.
+The default PlatformIO environment is `waveshare_esp32_s3_rlcd_4_2`. Each PlatformIO environment should pass `-DSOLAR_OS_BOARD=<target>` so CMake selects the matching SolarOS board profile in `boards/`.
 
 To add a board target:
 
@@ -46,7 +46,7 @@ To add a board target:
 3. Add `include/boards/<target>.h` with the `SOLAR_OS_BOARD_*` pin and hardware metadata.
 4. Add `[env:<target>]` to `platformio.ini` and set `board = <target>`.
 
-For an alias environment, set `SOLAR_OS_BOARD=<target>` when building so CMake picks the right profile.
+See [Defining SolarOS Boards](doc/solar_os_boards.md) for the capability flags, display driver binding pattern, and validation checklist.
 
 ## Firmware Flavors
 
@@ -57,7 +57,13 @@ pio run
 SOLAR_OS_FLAVOR=core pio run
 ```
 
-Each flavor enables packages:
+Each flavor enables package groups or individual build-unit packages. Package
+definitions live in `packages/solar_os_packages.toml`; that catalog defines
+group membership, app/job package names, source files, and ESP-IDF component
+requirements. CMake consumes the generated package source list, so disabled
+apps and jobs are not compiled into the image.
+
+Current package groups:
 
 - `core`: Always enabled. Board hardware services, display/terminal, shell, SD storage, ports, logs, jobs framework, OTA, RTC/time, BLE keyboard, Wi-Fi control, battery, ADC, GPIO, PWM, I2C, UART, SHTC3 sensors, and the `audio` hardware command.
 - `audio`: `arecord`, `aplay`, and MP3 decoding.
@@ -68,7 +74,19 @@ Each flavor enables packages:
 - `lua`: Lua runtime. This is independent of `python` and does not pull in `net`.
 - `utils`: Text editor, pager, reader, clock, and serial terminal app.
 
-Use `pkg` on the device to see the compiled flavor and package set. `version` also prints the active flavor.
+Individual package keys use names such as `app_ssh`, `app_reader`,
+`app_python`, `job_httpd`, `job_daq`, `service_uart`, and `service_battery`.
+Existing group-style flavor files continue to work:
+
+```toml
+[packages]
+core = true
+net = true
+app_invaders = false
+```
+
+Use `pkg` on the device to see selected groups and concrete build units.
+`version` also prints the active flavor and build-unit package list.
 
 ## Input
 

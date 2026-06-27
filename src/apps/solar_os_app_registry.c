@@ -6,73 +6,123 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "solar_os_config.h"
-#if SOLAR_OS_PACKAGE_AUDIO
+#if SOLAR_OS_PACKAGE_APP_APLAY || SOLAR_OS_PACKAGE_APP_ARECORD
 #include "solar_os_audio_apps.h"
 #endif
-#if SOLAR_OS_PACKAGE_NET
+#if SOLAR_OS_PACKAGE_APP_CHAT
 #include "solar_os_chat_app.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_CURL
 #include "solar_os_curl.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_SCP
 #include "solar_os_scp_app.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_SSH
 #include "solar_os_ssh_app.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_WEB
 #include "solar_os_web.h"
 #endif
-#if SOLAR_OS_PACKAGE_UTILS
+#if SOLAR_OS_PACKAGE_APP_CLOCK
 #include "solar_os_clock.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_COM
 #include "solar_os_com.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_EDIT
 #include "solar_os_edit.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_FILES
 #include "solar_os_files.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_LESS
 #include "solar_os_less.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_NOTES
 #include "solar_os_notes.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_PLOT
 #include "solar_os_plot.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_READER
 #include "solar_os_reader.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_SHEET
 #include "solar_os_sheet.h"
 #endif
-#if SOLAR_OS_PACKAGE_GAMES
+#if SOLAR_OS_PACKAGE_APP_INVADERS
 #include "solar_os_invaders.h"
 #endif
-#if SOLAR_OS_PACKAGE_PYTHON
+#if SOLAR_OS_PACKAGE_APP_PYTHON
 #include "solar_os_python.h"
 #endif
-#if SOLAR_OS_PACKAGE_LUA
+#if SOLAR_OS_PACKAGE_APP_LUA
 #include "solar_os_lua.h"
 #endif
-#if SOLAR_OS_PACKAGE_MEDIA
+#if SOLAR_OS_PACKAGE_APP_VIEW
 #include "solar_os_view.h"
 #endif
 
 static const solar_os_app_registry_entry_t registered_apps[] = {
-#if SOLAR_OS_PACKAGE_AUDIO
+#if SOLAR_OS_PACKAGE_APP_APLAY
     {"aplay", "play WAV/MP3 audio", &solar_os_aplay_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
+#endif
+#if SOLAR_OS_PACKAGE_APP_ARECORD
     {"arecord", "record WAV audio", &solar_os_arecord_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
 #endif
-#if SOLAR_OS_PACKAGE_NET
+#if SOLAR_OS_PACKAGE_APP_CHAT
     {"chat", "gateway chat client", &solar_os_chat_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
+#endif
+#if SOLAR_OS_PACKAGE_APP_CURL
     {"curl", "HTTP client", &solar_os_curl_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
+#endif
+#if SOLAR_OS_PACKAGE_APP_SCP
     {"scp", "SCP file copy", &solar_os_scp_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
+#endif
+#if SOLAR_OS_PACKAGE_APP_SSH
     {"ssh", "SSH client", &solar_os_ssh_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
+#endif
+#if SOLAR_OS_PACKAGE_APP_WEB
     {"web", "simple web browser", &solar_os_web_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
 #endif
-#if SOLAR_OS_PACKAGE_UTILS
+#if SOLAR_OS_PACKAGE_APP_CLOCK
     {"clock", "clock, countdown alarm, stopwatch", &solar_os_clock_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
+#endif
+#if SOLAR_OS_PACKAGE_APP_COM
     {"com", "serial terminal", &solar_os_com_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
+#endif
+#if SOLAR_OS_PACKAGE_APP_EDIT
     {"edit", "text editor", &solar_os_edit_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
+#endif
+#if SOLAR_OS_PACKAGE_APP_FILES
     {"files", "two-pane file manager", &solar_os_files_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY},
+#endif
+#if SOLAR_OS_PACKAGE_APP_LESS
     {"less", "text file pager", &solar_os_less_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
+#endif
+#if SOLAR_OS_PACKAGE_APP_NOTES
     {"notes", "Markdown checklist notes", &solar_os_notes_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
+#endif
+#if SOLAR_OS_PACKAGE_APP_PLOT
     {"plot", "plot DAQ CSV files or scalar streams", &solar_os_plot_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
+#endif
+#if SOLAR_OS_PACKAGE_APP_READER
     {"reader", "graphics text/Markdown/EPUB reader", &solar_os_reader_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
+#endif
+#if SOLAR_OS_PACKAGE_APP_SHEET
     {"sheet", "CSV sheet viewer", &solar_os_sheet_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
 #endif
-#if SOLAR_OS_PACKAGE_GAMES
+#if SOLAR_OS_PACKAGE_APP_INVADERS
     {"invaders", "arcade shooter", &solar_os_invaders_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
 #endif
-#if SOLAR_OS_PACKAGE_PYTHON
+#if SOLAR_OS_PACKAGE_APP_PYTHON
     {"python", "MicroPython runtime", &solar_os_python_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
 #endif
-#if SOLAR_OS_PACKAGE_LUA
+#if SOLAR_OS_PACKAGE_APP_LUA
     {"lua", "Lua runtime", &solar_os_lua_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT},
 #endif
-#if SOLAR_OS_PACKAGE_MEDIA
+#if SOLAR_OS_PACKAGE_APP_VIEW
     {"view", "image viewer", &solar_os_view_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY},
 #endif
     {NULL, NULL, NULL, 0},

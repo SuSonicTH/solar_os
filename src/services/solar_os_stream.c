@@ -9,6 +9,7 @@
 
 #include "solar_os_adc.h"
 #include "solar_os_audio.h"
+#include "solar_os_board_caps.h"
 #include "solar_os_battery.h"
 #include "solar_os_gpio.h"
 #include "solar_os_port.h"
@@ -37,6 +38,7 @@ typedef struct {
     const char *format;
     const char *summary;
     stream_kind_t kind;
+    solar_os_board_capability_t required_capability;
     int index;
 } stream_source_t;
 
@@ -48,6 +50,7 @@ static const stream_source_t singleton_streams[] = {
         .format = "csv",
         .summary = "ambient temperature",
         .kind = STREAM_KIND_TEMPERATURE,
+        .required_capability = SOLAR_OS_BOARD_CAP_TEMPERATURE,
     },
     {
         .id = "humidity",
@@ -56,6 +59,7 @@ static const stream_source_t singleton_streams[] = {
         .format = "csv",
         .summary = "relative humidity",
         .kind = STREAM_KIND_HUMIDITY,
+        .required_capability = SOLAR_OS_BOARD_CAP_HUMIDITY,
     },
     {
         .id = "battery",
@@ -64,6 +68,7 @@ static const stream_source_t singleton_streams[] = {
         .format = "csv",
         .summary = "battery voltage and state",
         .kind = STREAM_KIND_BATTERY,
+        .required_capability = SOLAR_OS_BOARD_CAP_BATTERY,
     },
     {
         .id = "mic0",
@@ -72,6 +77,7 @@ static const stream_source_t singleton_streams[] = {
         .format = "csv",
         .summary = "left microphone level",
         .kind = STREAM_KIND_MIC,
+        .required_capability = SOLAR_OS_BOARD_CAP_AUDIO,
         .index = 0,
     },
     {
@@ -81,6 +87,7 @@ static const stream_source_t singleton_streams[] = {
         .format = "csv",
         .summary = "right microphone level",
         .kind = STREAM_KIND_MIC,
+        .required_capability = SOLAR_OS_BOARD_CAP_AUDIO,
         .index = 1,
     },
 };
@@ -126,20 +133,46 @@ static void stream_fill_info(solar_os_stream_info_t *info,
     strlcpy(info->summary, summary != NULL ? summary : "", sizeof(info->summary));
 }
 
+static bool stream_singleton_available(const stream_source_t *source)
+{
+    return source != NULL &&
+        (source->required_capability == 0 ||
+         solar_os_board_has(source->required_capability));
+}
+
+static size_t stream_singleton_count(void)
+{
+    size_t count = 0;
+    for (size_t i = 0; i < sizeof(singleton_streams) / sizeof(singleton_streams[0]); i++) {
+        if (stream_singleton_available(&singleton_streams[i])) {
+            count++;
+        }
+    }
+    return count;
+}
+
 static bool stream_info_for_singleton(size_t index, solar_os_stream_info_t *info)
 {
-    if (index >= sizeof(singleton_streams) / sizeof(singleton_streams[0])) {
-        return false;
+    size_t seen = 0;
+    for (size_t i = 0; i < sizeof(singleton_streams) / sizeof(singleton_streams[0]); i++) {
+        const stream_source_t *source = &singleton_streams[i];
+        if (!stream_singleton_available(source)) {
+            continue;
+        }
+        if (seen++ != index) {
+            continue;
+        }
+
+        stream_fill_info(info,
+                         source->id,
+                         source->type,
+                         source->unit,
+                         source->format,
+                         source->summary);
+        return true;
     }
 
-    const stream_source_t *source = &singleton_streams[index];
-    stream_fill_info(info,
-                     source->id,
-                     source->type,
-                     source->unit,
-                     source->format,
-                     source->summary);
-    return true;
+    return false;
 }
 
 static bool stream_find_singleton(const char *id, const stream_source_t **source)
@@ -149,7 +182,8 @@ static bool stream_find_singleton(const char *id, const stream_source_t **source
     }
 
     for (size_t i = 0; i < sizeof(singleton_streams) / sizeof(singleton_streams[0]); i++) {
-        if (strcmp(id, singleton_streams[i].id) == 0) {
+        if (strcmp(id, singleton_streams[i].id) == 0 &&
+            stream_singleton_available(&singleton_streams[i])) {
             if (source != NULL) {
                 *source = &singleton_streams[i];
             }
@@ -280,7 +314,7 @@ static bool stream_port_info_by_readable_index(size_t target, solar_os_stream_in
 
 size_t solar_os_stream_count(void)
 {
-    return (sizeof(singleton_streams) / sizeof(singleton_streams[0])) +
+    return stream_singleton_count() +
         stream_runtime_adc_count() +
         stream_runtime_gpio_count() +
         stream_readable_port_count();
@@ -292,7 +326,7 @@ bool solar_os_stream_get(size_t index, solar_os_stream_info_t *info)
         return false;
     }
 
-    const size_t singleton_count = sizeof(singleton_streams) / sizeof(singleton_streams[0]);
+    const size_t singleton_count = stream_singleton_count();
     if (index < singleton_count) {
         return stream_info_for_singleton(index, info);
     }

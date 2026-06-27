@@ -1,0 +1,261 @@
+[groups.core]
+members = [
+  "core_runtime",
+  "core_shell",
+  "core_fs_commands",
+  "service_wifi",
+  "service_ble",
+  "service_sd",
+  "service_audio",
+  "service_gpio",
+  "service_i2c",
+  "service_uart",
+  "service_battery",
+  "service_rtc",
+  "service_sensors",
+  "service_adc",
+  "service_pwm",
+  "job_bridge",
+  "job_log",
+  "job_shell",
+  "job_batmon",
+  "job_daq",
+]
+
+[groups.audio]
+members = ["service_audio", "app_aplay", "app_arecord"]
+triggers = ["app_aplay", "app_arecord"]
+
+[groups.net]
+members = [
+  "service_wifi",
+  "app_ssh",
+  "app_scp",
+  "app_curl",
+  "app_web",
+  "app_chat",
+  "job_httpd",
+  "job_slip",
+  "job_ntp_sync",
+]
+triggers = [
+  "app_ssh",
+  "app_scp",
+  "app_curl",
+  "app_web",
+  "app_chat",
+  "job_httpd",
+  "job_slip",
+  "job_ntp_sync",
+]
+sources = [
+  "services/solar_os_chat.c",
+  "services/solar_os_mqtt.c",
+  "services/solar_os_net.c",
+  "services/solar_os_scp.c",
+  "services/solar_os_ssh.c",
+  "services/solar_os_ssh_keys.c",
+  "services/solar_os_ssh_transport.c",
+]
+requires = ["esp_http_server", "mbedtls", "mqtt", "stb_image", "webp_decoder"]
+
+[groups.media]
+members = ["app_view"]
+triggers = ["app_view"]
+
+[groups.games]
+members = ["app_invaders"]
+triggers = ["app_invaders"]
+
+[groups.python]
+members = ["app_python"]
+triggers = ["app_python"]
+
+[groups.lua]
+members = ["app_lua"]
+triggers = ["app_lua"]
+
+[groups.utils]
+members = [
+  "app_clock",
+  "app_com",
+  "app_edit",
+  "app_less",
+  "app_reader",
+  "app_files",
+  "app_notes",
+  "app_plot",
+  "app_sheet",
+]
+triggers = [
+  "app_clock",
+  "app_com",
+  "app_edit",
+  "app_less",
+  "app_reader",
+  "app_files",
+  "app_notes",
+  "app_plot",
+  "app_sheet",
+]
+
+[packages.core_runtime]
+label = "core.runtime"
+
+[packages.core_shell]
+label = "core.shell"
+
+[packages.core_fs_commands]
+label = "core.fs-commands"
+
+[packages.service_wifi]
+label = "service.wifi"
+
+[packages.service_ble]
+label = "service.ble"
+
+[packages.service_sd]
+label = "service.sd"
+
+[packages.service_audio]
+label = "service.audio"
+
+[packages.service_gpio]
+label = "service.gpio"
+
+[packages.service_i2c]
+label = "service.i2c"
+
+[packages.service_uart]
+label = "service.uart"
+
+[packages.service_battery]
+label = "service.battery"
+
+[packages.service_rtc]
+label = "service.rtc"
+
+[packages.service_sensors]
+label = "service.sensors"
+
+[packages.service_adc]
+label = "service.adc"
+
+[packages.service_pwm]
+label = "service.pwm"
+
+[packages.app_aplay]
+label = "app.aplay"
+sources = ["apps/solar_os_audio_apps.c"]
+requires = ["minimp3"]
+
+[packages.app_arecord]
+label = "app.arecord"
+sources = ["apps/solar_os_audio_apps.c"]
+
+[packages.app_ssh]
+label = "app.ssh"
+sources = ["apps/solar_os_ssh.c"]
+
+[packages.app_scp]
+label = "app.scp"
+sources = ["apps/solar_os_scp.c"]
+
+[packages.app_curl]
+label = "app.curl"
+sources = ["apps/solar_os_curl.c"]
+
+[packages.app_web]
+label = "app.web"
+sources = ["apps/solar_os_web.c"]
+
+[packages.app_chat]
+label = "app.chat"
+sources = ["apps/solar_os_chat.c"]
+
+[packages.app_view]
+label = "app.view"
+sources = ["apps/solar_os_view.c"]
+requires = ["stb_image", "webp_decoder"]
+
+[packages.app_invaders]
+label = "app.invaders"
+sources = ["apps/solar_os_invaders.c"]
+
+[packages.app_python]
+label = "app.python"
+sources = ["apps/solar_os_python.c"]
+requires = ["micropython_embed"]
+
+[packages.app_lua]
+label = "app.lua"
+sources = ["apps/solar_os_lua.c"]
+requires = ["lua"]
+
+[packages.app_clock]
+label = "app.clock"
+sources = ["apps/solar_os_clock.c"]
+
+[packages.app_com]
+label = "app.com"
+sources = ["apps/solar_os_com.c"]
+
+[packages.app_edit]
+label = "app.edit"
+sources = ["apps/solar_os_edit.c"]
+
+[packages.app_less]
+label = "app.less"
+sources = ["apps/solar_os_less.c"]
+
+[packages.app_reader]
+label = "app.reader"
+sources = ["apps/solar_os_reader.c"]
+
+[packages.app_files]
+label = "app.files"
+sources = ["apps/solar_os_files.c"]
+
+[packages.app_notes]
+label = "app.notes"
+sources = ["apps/solar_os_notes.c"]
+
+[packages.app_plot]
+label = "app.plot"
+sources = ["apps/solar_os_plot.c"]
+
+[packages.app_sheet]
+label = "app.sheet"
+sources = ["apps/solar_os_sheet.c"]
+
+[packages.job_httpd]
+label = "job.httpd"
+sources = ["jobs/solar_os_httpd_job.c"]
+
+[packages.job_slip]
+label = "job.slip"
+sources = ["jobs/solar_os_slip_job.c"]
+
+[packages.job_bridge]
+label = "job.bridge"
+sources = ["jobs/solar_os_bridge_job.c"]
+
+[packages.job_log]
+label = "job.log"
+sources = ["jobs/solar_os_log_job.c"]
+
+[packages.job_shell]
+label = "job.shell"
+sources = ["jobs/solar_os_shell_job.c"]
+
+[packages.job_batmon]
+label = "job.batmon"
+sources = ["jobs/solar_os_batmon_job.c"]
+
+[packages.job_daq]
+label = "job.daq"
+sources = ["jobs/solar_os_daq_job.c"]
+
+[packages.job_ntp_sync]
+label = "job.ntp-sync"
+sources = ["jobs/solar_os_ntp_sync_job.c"]

@@ -140,6 +140,7 @@ static const shell_command_t shell_builtin_commands[] = {
     {"job", "control background jobs", solar_os_shell_cmd_job},
     {"version", "show SolarOS version", solar_os_shell_cmd_version},
     {"pkg", "show compiled packages", solar_os_shell_cmd_pkg},
+    {"board", "show board capabilities", solar_os_shell_cmd_board},
     {"clear", "clear the screen", solar_os_shell_cmd_clear},
     {"sleep", "enter light sleep", solar_os_shell_cmd_sleep},
     {"power", "power profile and sleep policy", solar_os_shell_cmd_power},
@@ -1986,27 +1987,37 @@ static bool shell_is_path_command(const char *command)
            strcmp(command, "cp") == 0 ||
            strcmp(command, "zip") == 0 ||
            strcmp(command, "unzip") == 0 ||
-#if SOLAR_OS_PACKAGE_AUDIO
+#if SOLAR_OS_PACKAGE_APP_APLAY
            strcmp(command, "aplay") == 0 ||
+#endif
+#if SOLAR_OS_PACKAGE_APP_ARECORD
            strcmp(command, "arecord") == 0 ||
 #endif
-#if SOLAR_OS_PACKAGE_UTILS
+#if SOLAR_OS_PACKAGE_APP_EDIT
            strcmp(command, "edit") == 0 ||
+#endif
+#if SOLAR_OS_PACKAGE_APP_FILES
            strcmp(command, "files") == 0 ||
+#endif
+#if SOLAR_OS_PACKAGE_APP_LESS
            strcmp(command, "less") == 0 ||
+#endif
+#if SOLAR_OS_PACKAGE_APP_READER
            strcmp(command, "reader") == 0 ||
+#endif
+#if SOLAR_OS_PACKAGE_APP_SHEET
            strcmp(command, "sheet") == 0 ||
 #endif
-#if SOLAR_OS_PACKAGE_PYTHON
+#if SOLAR_OS_PACKAGE_APP_PYTHON
            strcmp(command, "python") == 0 ||
 #endif
-#if SOLAR_OS_PACKAGE_LUA
+#if SOLAR_OS_PACKAGE_APP_LUA
            strcmp(command, "lua") == 0 ||
 #endif
-#if SOLAR_OS_PACKAGE_MEDIA
+#if SOLAR_OS_PACKAGE_APP_VIEW
            strcmp(command, "view") == 0 ||
 #endif
-#if SOLAR_OS_PACKAGE_NET
+#if SOLAR_OS_PACKAGE_APP_SCP
            strcmp(command, "scp") == 0;
 #else
            false;

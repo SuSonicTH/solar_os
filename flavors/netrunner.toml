@@ -1,0 +1,13 @@
+[flavor]
+name = "netrunner"
+description = "Minimal SolarOS build with hardware services, and network tools."
+
+[packages]
+core = true
+audio = false
+net = true
+media = false
+games = false
+python = false
+lua = false
+utils = false
