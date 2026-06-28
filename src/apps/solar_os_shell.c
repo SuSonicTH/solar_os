@@ -2244,6 +2244,7 @@ typedef struct {
     char dir_path[SHELL_PATH_MAX];
     char base_arg[SHELL_PATH_MAX];
     char match_name[SHELL_PATH_MAX];
+    char common_prefix[SHELL_PATH_MAX];
     char completed_arg[SHELL_PATH_MAX];
     char completed_line[SHELL_INPUT_MAX];
 } shell_path_completion_work_t;
@@ -2258,13 +2259,74 @@ static shell_path_completion_work_t *shell_alloc_path_completion_work(void)
     return work;
 }
 
-static void shell_complete_path(solar_os_context_t *ctx, size_t token_start, bool dirs_only)
+static void shell_update_common_prefix(char *common, size_t common_len, const char *name)
+{
+    size_t i = 0;
+
+    if (common == NULL || common_len == 0 || name == NULL) {
+        return;
+    }
+
+    while (common[i] != '\0' && name[i] != '\0' && common[i] == name[i]) {
+        i++;
+    }
+    common[i] = '\0';
+}
+
+static bool shell_path_entry_matches(const char *name, const char *prefix, bool prefix_has_wildcards)
+{
+    if (name == NULL || prefix == NULL) {
+        return false;
+    }
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+        return false;
+    }
+    if (prefix_has_wildcards) {
+        return shell_wildcard_match(prefix, name);
+    }
+    return starts_with(name, prefix);
+}
+
+static void shell_print_path_matches(solar_os_context_t *ctx,
+                                     const shell_path_completion_work_t *work,
+                                     const char *prefix,
+                                     bool prefix_has_wildcards,
+                                     bool dirs_only)
 {
     solar_os_shell_io_t *io = shell_io(ctx);
+    DIR *dir = opendir(work->dir_path);
+    if (dir == NULL) {
+        return;
+    }
+
+    solar_os_shell_io_newline(io);
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (!shell_path_entry_matches(entry->d_name, prefix, prefix_has_wildcards)) {
+            continue;
+        }
+
+        const bool entry_is_dir = shell_path_entry_is_dir(work->dir_path, entry->d_name);
+        if (dirs_only && !entry_is_dir) {
+            continue;
+        }
+
+        shell_print_path_match(io, work->dir_path, entry->d_name);
+    }
+    closedir(dir);
+
+    shell_prompt(ctx);
+    shell_replace_input(ctx, work->original);
+}
+
+static void shell_complete_path(solar_os_context_t *ctx,
+                                size_t token_start,
+                                bool dirs_only,
+                                bool show_matches)
+{
     shell_path_completion_work_t *work = shell_alloc_path_completion_work();
     bool match_is_dir = false;
     size_t match_count = 0;
-    bool printed_matches = false;
 
     if (work == NULL) {
         return;
@@ -2315,14 +2377,7 @@ static void shell_complete_path(solar_os_context_t *ctx, size_t token_start, boo
     const bool prefix_has_wildcards = shell_arg_has_wildcards(prefix);
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-        if (prefix_has_wildcards) {
-            if (!shell_wildcard_match(prefix, entry->d_name)) {
-                continue;
-            }
-        } else if (!starts_with(entry->d_name, prefix)) {
+        if (!shell_path_entry_matches(entry->d_name, prefix, prefix_has_wildcards)) {
             continue;
         }
 
@@ -2334,14 +2389,12 @@ static void shell_complete_path(solar_os_context_t *ctx, size_t token_start, boo
         match_count++;
         if (match_count == 1) {
             strlcpy(work->match_name, entry->d_name, sizeof(work->match_name));
+            strlcpy(work->common_prefix, entry->d_name, sizeof(work->common_prefix));
             match_is_dir = entry_is_dir;
         } else {
-            if (!printed_matches) {
-                solar_os_shell_io_newline(io);
-                shell_print_path_match(io, work->dir_path, work->match_name);
-                printed_matches = true;
-            }
-            shell_print_path_match(io, work->dir_path, entry->d_name);
+            shell_update_common_prefix(work->common_prefix,
+                                       sizeof(work->common_prefix),
+                                       entry->d_name);
         }
     }
 
@@ -2352,6 +2405,7 @@ static void shell_complete_path(solar_os_context_t *ctx, size_t token_start, boo
         return;
     }
 
+    const size_t prefix_len = strlen(prefix);
     shell_session(ctx)->history_browsing = false;
     shell_session(ctx)->history_index = -1;
 
@@ -2373,8 +2427,26 @@ static void shell_complete_path(solar_os_context_t *ctx, size_t token_start, boo
         return;
     }
 
-    shell_prompt(ctx);
-    shell_replace_input(ctx, work->original);
+    if (!prefix_has_wildcards && strlen(work->common_prefix) > prefix_len) {
+        snprintf(work->completed_arg,
+                 sizeof(work->completed_arg),
+                 "%s%s",
+                 work->base_arg,
+                 work->common_prefix);
+        snprintf(work->completed_line,
+                 sizeof(work->completed_line),
+                 "%.*s%s",
+                 (int)token_start,
+                 shell_session(ctx)->input,
+                 work->completed_arg);
+        shell_replace_input(ctx, work->completed_line);
+        heap_caps_free(work);
+        return;
+    }
+
+    if (show_matches || prefix_has_wildcards) {
+        shell_print_path_matches(ctx, work, prefix, prefix_has_wildcards, dirs_only);
+    }
     heap_caps_free(work);
 }
 
@@ -2730,7 +2802,7 @@ static bool shell_complete_daq_start(solar_os_context_t *ctx,
 
     if (completed.positional_count == 0) {
         if (shell_token_looks_like_path(prefix)) {
-            shell_complete_path(ctx, token_start, false);
+            shell_complete_path(ctx, token_start, false, show_matches);
             return true;
         }
         return shell_complete_daq_kind(ctx,
@@ -2754,7 +2826,7 @@ static bool shell_complete_daq_start(solar_os_context_t *ctx,
 
     if (completed.raw || completed.first_pos_type == SOLAR_OS_STREAM_TYPE_BYTES) {
         if (completed.positional_count == 1) {
-            shell_complete_path(ctx, token_start, false);
+            shell_complete_path(ctx, token_start, false, show_matches);
             return true;
         }
         return shell_complete_daq_kind(ctx,
@@ -2782,7 +2854,7 @@ static bool shell_complete_daq_start(solar_os_context_t *ctx,
                                        show_matches);
     }
 
-    shell_complete_path(ctx, token_start, false);
+    shell_complete_path(ctx, token_start, false, show_matches);
     return true;
 }
 
@@ -2949,7 +3021,7 @@ static bool shell_complete_argument(solar_os_context_t *ctx,
     const shell_completion_rule_t *path_rule =
         shell_completion_find_path_rule(completed_tokens, completed_count);
     if (path_rule != NULL) {
-        shell_complete_path(ctx, token_start, path_rule->dirs_only);
+        shell_complete_path(ctx, token_start, path_rule->dirs_only, show_matches);
         return true;
     }
 
@@ -3040,7 +3112,10 @@ static void shell_complete_command(solar_os_context_t *ctx, bool show_matches)
         return;
     }
 
-    shell_complete_path(ctx, token_start, shell_path_completion_dirs_only(effective_command));
+    shell_complete_path(ctx,
+                        token_start,
+                        shell_path_completion_dirs_only(effective_command),
+                        show_matches);
 }
 
 typedef struct {
