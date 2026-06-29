@@ -26,6 +26,7 @@
 #include "solar_os_log.h"
 #include "solar_os_ota.h"
 #include "solar_os_port.h"
+#include "solar_os_port_shell.h"
 #include "solar_os_shell.h"
 #if SOLAR_OS_PACKAGE_NET
 #include "solar_os_ssh_keys.h"
@@ -662,12 +663,6 @@ static bool job_start_port_arg(int argc,
         return false;
     }
 
-    if (strcmp(argv[2], "shell") == 0) {
-        *port_name = argv[3];
-        *required_caps = SOLAR_OS_PORT_CAP_READ | SOLAR_OS_PORT_CAP_WRITE;
-        return true;
-    }
-
     if (strcmp(argv[2], "log") == 0 && strcmp(argv[3], "file") != 0) {
         *port_name = argv[3];
         *required_caps = SOLAR_OS_PORT_CAP_WRITE;
@@ -823,6 +818,26 @@ void solar_os_shell_cmd_job(solar_os_context_t *ctx, int argc, char **argv)
             return;
         }
 
+        if (strcmp(argv[2], "shell") == 0) {
+            if (argc != 4) {
+                solar_os_shell_io_writeln(term, "usage: session create shell <port>");
+                return;
+            }
+            uint8_t session_id = 0;
+            const esp_err_t err = solar_os_port_shell_start(ctx, argv[3], &session_id);
+            if (err == ESP_OK) {
+                solar_os_shell_io_printf(term,
+                                         "job shell moved to sessions; session %u created: shell on %s\n",
+                                         (unsigned)session_id,
+                                         argv[3]);
+            } else {
+                solar_os_shell_io_printf(term,
+                                         "session create failed: %s\n",
+                                         esp_err_to_name(err));
+            }
+            return;
+        }
+
         const esp_err_t err = solar_os_jobs_start(ctx, argv[2], argc - 2, &argv[2]);
         if (err == ESP_OK) {
             solar_os_shell_io_printf(term, "job started: %s\n", argv[2]);
@@ -847,6 +862,11 @@ void solar_os_shell_cmd_job(solar_os_context_t *ctx, int argc, char **argv)
     if (strcmp(argv[1], "stop") == 0) {
         if (argc != 3) {
             solar_os_shell_io_writeln(term, "usage: job stop <name>");
+            return;
+        }
+
+        if (strcmp(argv[2], "shell") == 0) {
+            solar_os_shell_io_writeln(term, "job shell moved to sessions; use sessions and close <session-id>");
             return;
         }
 

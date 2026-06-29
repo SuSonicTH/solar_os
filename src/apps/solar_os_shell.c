@@ -24,6 +24,8 @@
 #include "solar_os_keys.h"
 #include "solar_os_log.h"
 #include "solar_os_port.h"
+#include "solar_os_port_shell.h"
+#include "solar_os_sessions.h"
 #include "solar_os_storage.h"
 #include "solar_os_stream.h"
 #include "solar_os_terminal.h"
@@ -109,6 +111,7 @@ static void cmd_sh(solar_os_context_t *ctx, int argc, char **argv);
 static void cmd_watch(solar_os_context_t *ctx, int argc, char **argv);
 static void cmd_reboot(solar_os_context_t *ctx, int argc, char **argv);
 static void cmd_sessions(solar_os_context_t *ctx, int argc, char **argv);
+static void cmd_session(solar_os_context_t *ctx, int argc, char **argv);
 static void cmd_fg(solar_os_context_t *ctx, int argc, char **argv);
 static void cmd_close(solar_os_context_t *ctx, int argc, char **argv);
 static bool shell_execute_line(solar_os_context_t *ctx,
@@ -122,9 +125,10 @@ static const shell_command_t shell_builtin_commands[] = {
     {"apps", "list applications", solar_os_shell_cmd_apps},
     {"jobs", "list background jobs", solar_os_shell_cmd_jobs},
     {"job", "control background jobs", solar_os_shell_cmd_job},
-    {"sessions", "list foreground app sessions", cmd_sessions},
-    {"fg", "resume a foreground app session", cmd_fg},
-    {"close", "close a foreground app session", cmd_close},
+    {"sessions", "list sessions", cmd_sessions},
+    {"session", "manage sessions", cmd_session},
+    {"fg", "resume a display app session", cmd_fg},
+    {"close", "close a session", cmd_close},
     {"version", "show SolarOS version", solar_os_shell_cmd_version},
     {"pkg", "show compiled packages", solar_os_shell_cmd_pkg},
     {"board", "show board capabilities", solar_os_shell_cmd_board},
@@ -267,6 +271,18 @@ static const char * const job_subcommands[] = {
     "start",
     "stop",
 };
+
+static const char * const session_subcommands[] = {
+    "list",
+    "create",
+    "fg",
+    "foreground",
+    "switch",
+    "close",
+    "background",
+};
+
+static const char * const session_create_values[] = {"shell"};
 
 static const char * const job_log_values[] = {"file"};
 static const char * const ntp_sync_values[] = {"once"};
@@ -473,7 +489,6 @@ static const char * const path_setterm_timezone[] = {"setterm", "timezone"};
 static const char * const path_job[] = {"job"};
 static const char * const path_job_status[] = {"job", "status"};
 static const char * const path_job_start[] = {"job", "start"};
-static const char * const path_job_start_shell[] = {"job", "start", "shell"};
 static const char * const path_job_start_log[] = {"job", "start", "log"};
 static const char * const path_job_start_log_port[] = {"job", "start", "log", SHELL_COMPLETION_ANY};
 static const char * const path_job_start_log_file[] = {"job", "start", "log", "file"};
@@ -492,6 +507,9 @@ static const char * const path_job_start_daq_stream_file[] = {
     SHELL_COMPLETION_ANY,
 };
 static const char * const path_job_stop[] = {"job", "stop"};
+static const char * const path_session[] = {"session"};
+static const char * const path_session_create[] = {"session", "create"};
+static const char * const path_session_create_shell[] = {"session", "create", "shell"};
 static const char * const path_stream[] = {"stream"};
 static const char * const path_stream_status[] = {"stream", "status"};
 static const char * const path_daq[] = {"daq"};
@@ -704,7 +722,6 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_job, job_subcommands),
     SHELL_COMPLETION_JOBS(path_job_status),
     SHELL_COMPLETION_JOBS(path_job_start),
-    SHELL_COMPLETION_PORTS(path_job_start_shell),
     SHELL_COMPLETION_STATIC(path_job_start_log, job_log_values),
     SHELL_COMPLETION_PORTS(path_job_start_log),
     SHELL_COMPLETION_STATIC(path_job_start_log_port, log_level_values),
@@ -722,6 +739,9 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_PATH(path_job_start_daq_stream_file, false),
     SHELL_COMPLETION_STATIC(path_job_start_daq_stream_file, daq_options),
     SHELL_COMPLETION_JOBS(path_job_stop),
+    SHELL_COMPLETION_STATIC(path_session, session_subcommands),
+    SHELL_COMPLETION_STATIC(path_session_create, session_create_values),
+    SHELL_COMPLETION_PORTS(path_session_create_shell),
     SHELL_COMPLETION_STATIC(path_stream, stream_subcommands),
     SHELL_COMPLETION_STREAMS(path_stream_status),
     SHELL_COMPLETION_STATIC(path_daq, daq_subcommands),
@@ -3265,6 +3285,131 @@ static void cmd_sessions(solar_os_context_t *ctx, int argc, char **argv)
     }
 }
 
+static void session_print_usage(solar_os_shell_io_t *io)
+{
+    solar_os_shell_io_writeln(io, "usage:");
+    solar_os_shell_io_writeln(io, "  session list");
+    solar_os_shell_io_writeln(io, "  session create shell <port>");
+    solar_os_shell_io_writeln(io, "  session fg <session-id>");
+    solar_os_shell_io_writeln(io, "  session switch <session-id>");
+    solar_os_shell_io_writeln(io, "  session close <session-id>");
+}
+
+static void session_request_fg(solar_os_context_t *ctx, uint8_t session_id)
+{
+    if (solar_os_shell_io_kind(shell_io(ctx)) == SOLAR_OS_SHELL_IO_KIND_PORT) {
+        solar_os_shell_io_writeln(terminal(ctx),
+                                  "fg: display sessions are only available on the display shell");
+        return;
+    }
+
+    shell_session(ctx)->builtin_suppressed_prompt = true;
+    shell_session(ctx)->prompt_on_resume = true;
+    solar_os_context_request_session_fg(ctx, session_id);
+}
+
+static void session_request_close(solar_os_context_t *ctx, uint8_t session_id)
+{
+    if (solar_os_port_shell_is_session_id(session_id)) {
+        const esp_err_t err = solar_os_port_shell_stop(session_id);
+        if (err == ESP_OK) {
+            solar_os_shell_io_printf(terminal(ctx),
+                                     "closed session %u\n",
+                                     (unsigned)session_id);
+        } else {
+            solar_os_shell_io_printf(terminal(ctx),
+                                     "close: failed: %s\n",
+                                     esp_err_to_name(err));
+        }
+        return;
+    }
+
+    if (solar_os_shell_io_kind(shell_io(ctx)) == SOLAR_OS_SHELL_IO_KIND_PORT) {
+        solar_os_shell_io_writeln(terminal(ctx),
+                                  "close: display sessions can only be closed from the display shell");
+        return;
+    }
+
+    (void)solar_os_sessions_close_session(session_id, terminal(ctx));
+}
+
+static void cmd_session(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *io = terminal(ctx);
+
+    if (argc < 2) {
+        session_print_usage(io);
+        return;
+    }
+
+    if (strcmp(argv[1], "list") == 0 || strcmp(argv[1], "ls") == 0) {
+        if (argc != 2) {
+            solar_os_shell_io_writeln(io, "usage: session list");
+            return;
+        }
+        const esp_err_t err = solar_os_context_print_session_list(ctx);
+        if (err != ESP_OK) {
+            solar_os_shell_io_printf(io,
+                                     "session list: unavailable: %s\n",
+                                     esp_err_to_name(err));
+        }
+        return;
+    }
+
+    if (strcmp(argv[1], "create") == 0) {
+        if (argc != 4 || strcmp(argv[2], "shell") != 0) {
+            solar_os_shell_io_writeln(io, "usage: session create shell <port>");
+            return;
+        }
+
+        uint8_t session_id = 0;
+        const esp_err_t err = solar_os_port_shell_start(ctx, argv[3], &session_id);
+        if (err == ESP_OK) {
+            solar_os_shell_io_printf(io,
+                                     "session %u created: shell on %s\n",
+                                     (unsigned)session_id,
+                                     argv[3]);
+        } else {
+            solar_os_shell_io_printf(io,
+                                     "session create failed: %s\n",
+                                     esp_err_to_name(err));
+        }
+        return;
+    }
+
+    if (strcmp(argv[1], "fg") == 0 || strcmp(argv[1], "foreground") == 0 ||
+        strcmp(argv[1], "switch") == 0) {
+        uint8_t session_id = 0;
+        if (argc != 3 || !parse_session_id(argv[2], &session_id)) {
+            solar_os_shell_io_writeln(io, "usage: session fg <session-id>");
+            return;
+        }
+        if (solar_os_port_shell_is_session_id(session_id)) {
+            solar_os_shell_io_writeln(io, "session fg: port shells are already attached to their port");
+            return;
+        }
+        session_request_fg(ctx, session_id);
+        return;
+    }
+
+    if (strcmp(argv[1], "close") == 0) {
+        uint8_t session_id = 0;
+        if (argc != 3 || !parse_session_id(argv[2], &session_id)) {
+            solar_os_shell_io_writeln(io, "usage: session close <session-id>");
+            return;
+        }
+        session_request_close(ctx, session_id);
+        return;
+    }
+
+    if (strcmp(argv[1], "background") == 0 || strcmp(argv[1], "bg") == 0) {
+        solar_os_shell_io_writeln(io, "session background: foreground apps are suspended with Alt+Tab or fg/switch");
+        return;
+    }
+
+    session_print_usage(io);
+}
+
 static void cmd_fg(solar_os_context_t *ctx, int argc, char **argv)
 {
     uint8_t session_id = 0;
@@ -3274,9 +3419,11 @@ static void cmd_fg(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
 
-    shell_session(ctx)->builtin_suppressed_prompt = true;
-    shell_session(ctx)->prompt_on_resume = true;
-    solar_os_context_request_session_fg(ctx, session_id);
+    if (solar_os_port_shell_is_session_id(session_id)) {
+        solar_os_shell_io_writeln(terminal(ctx), "fg: port shells are already attached to their port");
+        return;
+    }
+    session_request_fg(ctx, session_id);
 }
 
 static void cmd_close(solar_os_context_t *ctx, int argc, char **argv)
@@ -3288,8 +3435,7 @@ static void cmd_close(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
 
-    shell_session(ctx)->builtin_suppressed_prompt = true;
-    solar_os_context_request_session_close(ctx, session_id);
+    session_request_close(ctx, session_id);
 }
 
 solar_os_shell_session_t *solar_os_shell_session_create(void)

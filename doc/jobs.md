@@ -1,11 +1,10 @@
 # SolarOS Jobs
 
-This document covers the built-in job registry. Jobs are normally background
-workers such as log followers, DAQ capture, HTTP serving, SLIP, or NTP sync.
-The port shell is currently registered as an `interactive` compatibility job so
-headless and external-terminal workflows can still use `job start shell <port>`.
-Foreground applications are documented in [apps.md](apps.md), and shell
-commands are documented in [commands.md](commands.md).
+This document covers the built-in background job registry. Jobs are autonomous
+workers such as log followers, DAQ capture, HTTP serving, SLIP, chatd, or NTP
+sync. Foreground applications are documented in [apps.md](apps.md), and shell
+commands are documented in [commands.md](commands.md). Port shells are sessions,
+started with `session create shell <port>`.
 
 Job availability depends on the selected firmware flavor and board
 capabilities. The running system is authoritative:
@@ -45,7 +44,6 @@ Compact list example:
 ```text
 NAME         STATE    KIND        EVT  TICKS RES
 batmon       running  background  tick    17   1
-shell        running  interactive -        0   1
 log          stopped  background  tick     0   0
 ```
 
@@ -351,38 +349,6 @@ Notes:
 - In `once` mode, the job retries at the interval until the first successful
   sync, then stops itself.
 - Without `once`, it keeps syncing periodically.
-
-## shell
-
-VT100 shell on a byte-stream port. This is the normal way to expose a clean
-SolarOS console on CDC or UART.
-
-This job is marked `interactive` because it owns a user-facing VT100 shell
-session. It remains under `job start shell <port>` for compatibility and for
-headless boards, while display foreground apps are managed by the session
-commands documented in [commands.md](commands.md).
-
-Usage:
-
-```text
-job start shell <port>
-job stop shell
-job status shell
-```
-
-Examples:
-
-```text
-job start shell cdc0
-job start shell uart0
-```
-
-Notes:
-
-- The shell job claims the selected port until stopped.
-- The default terminal size is `80x24`.
-- Port-shell foreground app exit uses `Ctrl+]`.
-- Text/TUI apps that support port shells can run through this session.
 
 ## slip
 

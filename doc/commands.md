@@ -113,13 +113,17 @@ setterm otaurl [url]
 | `job` | `job status [name]` | Show one job or all jobs. |
 | `job` | `job start <name> [args...]` | Start or restart a job. |
 | `job` | `job stop <name>` | Stop a job. |
+| `session` | `session list` | List display app sessions and port shell sessions. |
+| `session` | `session create shell <port>` | Start a VT100 shell session on a byte-stream port. |
+| `session` | `session fg <id>` or `session switch <id>` | Resume a display app session. |
+| `session` | `session close <id>` | Close a display app session or stop a port shell session. |
 
 `jobs` prints a compact table that fits the built-in display terminal:
 
 ```text
 NAME         STATE    KIND        EVT  TICKS RES
 batmon       running  background  tick    17   1
-shell        running  interactive -        0   1
+log          stopped  background  tick     0   0
 ```
 
 Columns:
@@ -128,7 +132,7 @@ Columns:
 | --- | --- |
 | `NAME` | Job registry name. |
 | `STATE` | `stopped`, `running`, or `failed`. |
-| `KIND` | `background` for normal jobs, `interactive` for compatibility jobs such as port shells. |
+| `KIND` | Job kind. Current registry jobs are background workers. |
 | `EVT` | `tick` if the job receives periodic tick events, otherwise `-`. |
 | `TICKS` | Number of dispatched tick events while running. |
 | `RES` | Number of resources currently recorded for the job. |
@@ -140,8 +144,8 @@ conflicts are reported as readable messages such as `job log owns cdc0`.
 Common job examples:
 
 ```text
-job start shell cdc0
-job start shell uart0
+session create shell cdc0
+session create shell uart0
 job start log cdc0
 job start log file /.shell/log info
 job start bridge cdc0 uart0
@@ -379,6 +383,6 @@ ota check
 ota upgrade
 watch -n 1 battery
 daq start /logs/env.csv temperature humidity battery --rate 60
-job start shell cdc0
+session create shell cdc0
 xfer send uart0 /logs/payload.bin --zmodem
 ```

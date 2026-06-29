@@ -58,7 +58,6 @@
         "job.slip",
         "job.bridge",
         "job.log",
-        "job.shell",
         "job.batmon",
         "job.daq",
         "job.ntp-sync"

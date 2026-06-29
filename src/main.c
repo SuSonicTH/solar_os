@@ -41,6 +41,7 @@
 #endif
 #include "solar_os_ota.h"
 #include "solar_os_port.h"
+#include "solar_os_port_shell.h"
 #include "solar_os_power.h"
 #include "solar_os_pwm.h"
 #include "solar_os_sensors.h"
@@ -967,13 +968,14 @@ static void start_headless_shell_if_needed(void)
         }
         had_candidate = true;
 
-        char *argv[] = {
-            (char *)"shell",
-            (char *)fallback_ports[i].port_name,
-        };
-        const esp_err_t err = solar_os_jobs_start(&os_ctx, "shell", 2, argv);
+        uint8_t session_id = 0;
+        const esp_err_t err =
+            solar_os_port_shell_start(&os_ctx, fallback_ports[i].port_name, &session_id);
         if (err == ESP_OK) {
-            SOLAR_OS_LOGI(TAG, "Headless shell started on %s", fallback_ports[i].port_name);
+            SOLAR_OS_LOGI(TAG,
+                          "Headless shell session %u started on %s",
+                          (unsigned)session_id,
+                          fallback_ports[i].port_name);
             return;
         }
         SOLAR_OS_LOGW(TAG,

@@ -36,4 +36,5 @@ void solar_os_sessions_dispatch_resume(uint32_t now_ms);
 void solar_os_sessions_process_requests(void);
 void solar_os_sessions_prompt_if_shell_active(void);
 
+esp_err_t solar_os_sessions_close_session(uint8_t session_id, solar_os_shell_io_t *io);
 void solar_os_sessions_print_list(solar_os_shell_io_t *io, void *user);

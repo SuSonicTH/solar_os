@@ -7,6 +7,7 @@
 #include "solar_os_app_registry.h"
 #include "solar_os_log.h"
 #include "solar_os_memory.h"
+#include "solar_os_port_shell.h"
 #include "solar_os_shell.h"
 #include "solar_os_terminal_internal.h"
 
@@ -907,6 +908,34 @@ void solar_os_sessions_prompt_if_shell_active(void)
     }
 }
 
+esp_err_t solar_os_sessions_close_session(uint8_t session_id, solar_os_shell_io_t *io)
+{
+    solar_os_session_entry_t *session = session_by_id(session_id);
+    if (session == NULL || session->app == solar_os_shell_app()) {
+        if (io != NULL) {
+            solar_os_shell_io_printf(io,
+                                     "close: no such closable session: %u\n",
+                                     (unsigned)session_id);
+            solar_os_shell_io_flush(io);
+        }
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (!close_session(session, true)) {
+        if (io != NULL) {
+            solar_os_shell_io_printf(io, "close: failed: %u\n", (unsigned)session_id);
+            solar_os_shell_io_flush(io);
+        }
+        return ESP_FAIL;
+    }
+
+    if (io != NULL) {
+        solar_os_shell_io_printf(io, "closed session %u\n", (unsigned)session_id);
+        solar_os_shell_io_flush(io);
+    }
+    return ESP_OK;
+}
+
 void solar_os_sessions_print_list(solar_os_shell_io_t *io, void *user)
 {
     (void)user;
@@ -931,5 +960,6 @@ void solar_os_sessions_print_list(solar_os_shell_io_t *io, void *user)
                                  app_display_name(session->app),
                                  session->title);
     }
+    solar_os_port_shell_print_list(io);
     solar_os_shell_io_flush(io);
 }

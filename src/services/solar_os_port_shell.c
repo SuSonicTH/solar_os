@@ -1,4 +1,4 @@
-#include "solar_os_shell_job.h"
+#include "solar_os_port_shell.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -9,33 +9,35 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "solar_os_app_registry.h"
-#include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_port.h"
 #include "solar_os_shell.h"
 #include "solar_os_shell_io.h"
 #include "solar_os_vt100.h"
 
-#define SHELL_JOB_TASK_STACK 16384
-#define SHELL_JOB_TASK_PRIORITY (tskIDLE_PRIORITY + 2)
-#define SHELL_JOB_READ_BUF 64
-#define SHELL_JOB_READ_TIMEOUT_MS 50U
-#define SHELL_JOB_ESC_FLUSH_MS 40U
-#define SHELL_JOB_TICK_MS 100U
-#define SHELL_JOB_DEFAULT_COLS 80
-#define SHELL_JOB_DEFAULT_ROWS 24
-#define SHELL_JOB_SIZE_PROBE_TIMEOUT_MS 200U
-#define SHELL_JOB_SIZE_PROBE_READ_MS 25U
-#define SHELL_JOB_SIZE_PROBE_MIN_COLS 20U
-#define SHELL_JOB_SIZE_PROBE_MIN_ROWS 8U
-#define SHELL_JOB_SIZE_PROBE_MAX_COLS 300U
-#define SHELL_JOB_SIZE_PROBE_MAX_ROWS 120U
+#define PORT_SHELL_MAX 4
+#define PORT_SHELL_TASK_STACK 16384
+#define PORT_SHELL_TASK_PRIORITY (tskIDLE_PRIORITY + 2)
+#define PORT_SHELL_READ_BUF 64
+#define PORT_SHELL_READ_TIMEOUT_MS 50U
+#define PORT_SHELL_ESC_FLUSH_MS 40U
+#define PORT_SHELL_TICK_MS 100U
+#define PORT_SHELL_DEFAULT_COLS 80
+#define PORT_SHELL_DEFAULT_ROWS 24
+#define PORT_SHELL_SIZE_PROBE_TIMEOUT_MS 200U
+#define PORT_SHELL_SIZE_PROBE_READ_MS 25U
+#define PORT_SHELL_SIZE_PROBE_MIN_COLS 20U
+#define PORT_SHELL_SIZE_PROBE_MIN_ROWS 8U
+#define PORT_SHELL_SIZE_PROBE_MAX_COLS 300U
+#define PORT_SHELL_SIZE_PROBE_MAX_ROWS 120U
 
-static const char *TAG = "solar_os_shell_job";
+static const char *TAG = "solar_os_port_shell";
 
 typedef struct {
+    bool used;
     bool running;
     volatile bool stop_requested;
+    uint8_t id;
     TaskHandle_t task;
     solar_os_port_handle_t port;
     solar_os_shell_session_t *session;
@@ -43,41 +45,39 @@ typedef struct {
     solar_os_vt100_input_t input;
     char port_name[SOLAR_OS_PORT_NAME_MAX];
     esp_err_t last_error;
-} shell_job_state_t;
+} port_shell_state_t;
 
-static shell_job_state_t shell_job = {
-    .port = SOLAR_OS_PORT_HANDLE_INIT,
-    .last_error = ESP_OK,
-};
+static port_shell_state_t port_shells[PORT_SHELL_MAX];
 
-static void shell_job_process_requests(shell_job_state_t *state);
+static void port_shell_process_requests(port_shell_state_t *state);
 
-static uint32_t shell_job_now_ms(void)
+static uint32_t port_shell_now_ms(void)
 {
     return (uint32_t)pdTICKS_TO_MS(xTaskGetTickCount());
 }
 
-static void shell_job_owner(const shell_job_state_t *state, char *owner, size_t owner_len)
+static void port_shell_owner(const port_shell_state_t *state, char *owner, size_t owner_len)
 {
     if (owner == NULL || owner_len == 0) {
         return;
     }
 
-    snprintf(owner,
-             owner_len,
-             "shell:%s",
-             state != NULL && state->port_name[0] != '\0' ? state->port_name : "?");
+    if (state == NULL) {
+        strlcpy(owner, "session:?", owner_len);
+        return;
+    }
+    snprintf(owner, owner_len, "session:%u", (unsigned)state->id);
 }
 
-static const solar_os_app_t *shell_job_foreground_app(shell_job_state_t *state)
+static const solar_os_app_t *port_shell_foreground_app(port_shell_state_t *state)
 {
     return state != NULL ? solar_os_shell_session_foreground_app(state->session) : NULL;
 }
 
-static bool shell_job_parse_size_report(const uint8_t *data,
-                                        size_t len,
-                                        uint16_t *rows,
-                                        uint16_t *cols)
+static bool port_shell_parse_size_report(const uint8_t *data,
+                                         size_t len,
+                                         uint16_t *rows,
+                                         uint16_t *cols)
 {
     if (data == NULL || rows == NULL || cols == NULL) {
         return false;
@@ -111,10 +111,10 @@ static bool shell_job_parse_size_report(const uint8_t *data,
         if (!have_cols || pos >= len || data[pos] != 'R') {
             continue;
         }
-        if (parsed_cols < SHELL_JOB_SIZE_PROBE_MIN_COLS ||
-            parsed_rows < SHELL_JOB_SIZE_PROBE_MIN_ROWS ||
-            parsed_cols > SHELL_JOB_SIZE_PROBE_MAX_COLS ||
-            parsed_rows > SHELL_JOB_SIZE_PROBE_MAX_ROWS) {
+        if (parsed_cols < PORT_SHELL_SIZE_PROBE_MIN_COLS ||
+            parsed_rows < PORT_SHELL_SIZE_PROBE_MIN_ROWS ||
+            parsed_cols > PORT_SHELL_SIZE_PROBE_MAX_COLS ||
+            parsed_rows > PORT_SHELL_SIZE_PROBE_MAX_ROWS) {
             continue;
         }
 
@@ -126,7 +126,7 @@ static bool shell_job_parse_size_report(const uint8_t *data,
     return false;
 }
 
-static void shell_job_probe_terminal_size(shell_job_state_t *state)
+static void port_shell_probe_terminal_size(port_shell_state_t *state)
 {
     uint8_t response[48];
     size_t response_len = 0;
@@ -146,18 +146,18 @@ static void shell_job_probe_terminal_size(shell_job_state_t *state)
     const char probe[] = "\x1b[?25h\x1b[999;999H\x1b[6n";
     (void)solar_os_shell_io_write_raw(io, probe, sizeof(probe) - 1U);
 
-    const uint32_t start_ms = shell_job_now_ms();
-    while ((uint32_t)(shell_job_now_ms() - start_ms) < SHELL_JOB_SIZE_PROBE_TIMEOUT_MS &&
+    const uint32_t start_ms = port_shell_now_ms();
+    while ((uint32_t)(port_shell_now_ms() - start_ms) < PORT_SHELL_SIZE_PROBE_TIMEOUT_MS &&
            response_len < sizeof(response)) {
         size_t read_len = 0;
         const esp_err_t err = solar_os_port_read(&state->port,
                                                  response + response_len,
                                                  sizeof(response) - response_len,
-                                                 SHELL_JOB_SIZE_PROBE_READ_MS,
+                                                 PORT_SHELL_SIZE_PROBE_READ_MS,
                                                  &read_len);
         if (err == ESP_OK && read_len > 0) {
             response_len += read_len;
-            if (shell_job_parse_size_report(response, response_len, &rows, &cols)) {
+            if (port_shell_parse_size_report(response, response_len, &rows, &cols)) {
                 solar_os_shell_io_set_dimensions(io, cols, rows);
                 SOLAR_OS_LOGI(TAG,
                               "terminal size on %s: %ux%u",
@@ -174,7 +174,8 @@ static void shell_job_probe_terminal_size(shell_job_state_t *state)
     }
 }
 
-static void shell_job_release_foreground_app(shell_job_state_t *state, const solar_os_app_t *app)
+static void port_shell_release_foreground_app(port_shell_state_t *state,
+                                              const solar_os_app_t *app)
 {
     char owner[SOLAR_OS_APP_OWNER_MAX];
 
@@ -182,13 +183,13 @@ static void shell_job_release_foreground_app(shell_job_state_t *state, const sol
         return;
     }
 
-    shell_job_owner(state, owner, sizeof(owner));
+    port_shell_owner(state, owner, sizeof(owner));
     solar_os_app_registry_release(app, owner);
 }
 
-static bool shell_job_emit_char(char ch, void *user)
+static bool port_shell_emit_char(char ch, void *user)
 {
-    shell_job_state_t *state = (shell_job_state_t *)user;
+    port_shell_state_t *state = (port_shell_state_t *)user;
 
     if (state == NULL || state->session == NULL || state->stop_requested) {
         return false;
@@ -199,7 +200,7 @@ static bool shell_job_emit_char(char ch, void *user)
         .data.ch = ch,
     };
 
-    const solar_os_app_t *foreground_app = shell_job_foreground_app(state);
+    const solar_os_app_t *foreground_app = port_shell_foreground_app(state);
     if (foreground_app != NULL && foreground_app->event != NULL) {
         (void)foreground_app->event(&state->ctx, &event);
     } else {
@@ -210,11 +211,11 @@ static bool shell_job_emit_char(char ch, void *user)
         solar_os_shell_io_writeln(solar_os_shell_session_io(state->session),
                                   "sleep is only available from the display shell");
     }
-    shell_job_process_requests(state);
+    port_shell_process_requests(state);
     return !state->stop_requested;
 }
 
-static void shell_job_send_tick(shell_job_state_t *state, uint32_t now_ms)
+static void port_shell_send_tick(port_shell_state_t *state, uint32_t now_ms)
 {
     if (state == NULL || state->session == NULL) {
         return;
@@ -224,7 +225,7 @@ static void shell_job_send_tick(shell_job_state_t *state, uint32_t now_ms)
         .type = SOLAR_OS_EVENT_TICK,
         .data.tick_ms = now_ms,
     };
-    const solar_os_app_t *foreground_app = shell_job_foreground_app(state);
+    const solar_os_app_t *foreground_app = port_shell_foreground_app(state);
     if (foreground_app != NULL && foreground_app->event != NULL) {
         (void)foreground_app->event(&state->ctx, &event);
     } else {
@@ -232,19 +233,19 @@ static void shell_job_send_tick(shell_job_state_t *state, uint32_t now_ms)
     }
 }
 
-static void shell_job_return_to_shell(shell_job_state_t *state)
+static void port_shell_return_to_shell(port_shell_state_t *state)
 {
     if (state == NULL || state->session == NULL) {
         return;
     }
 
     solar_os_shell_io_t *io = solar_os_shell_session_io(state->session);
-    const solar_os_app_t *foreground_app = shell_job_foreground_app(state);
+    const solar_os_app_t *foreground_app = port_shell_foreground_app(state);
 
     if (foreground_app != NULL && foreground_app->stop != NULL) {
         foreground_app->stop(&state->ctx);
     }
-    shell_job_release_foreground_app(state, foreground_app);
+    port_shell_release_foreground_app(state, foreground_app);
     solar_os_shell_session_set_foreground_app(state->session, NULL);
     (void)solar_os_context_take_exit_request(&state->ctx);
 
@@ -255,15 +256,15 @@ static void shell_job_return_to_shell(shell_job_state_t *state)
     solar_os_shell_session_prompt(&state->ctx, state->session);
 }
 
-static void shell_job_process_requests(shell_job_state_t *state)
+static void port_shell_process_requests(port_shell_state_t *state)
 {
     if (state == NULL || state->session == NULL) {
         return;
     }
 
     if (solar_os_context_take_exit_request(&state->ctx)) {
-        if (shell_job_foreground_app(state) != NULL) {
-            shell_job_return_to_shell(state);
+        if (port_shell_foreground_app(state) != NULL) {
+            port_shell_return_to_shell(state);
         }
         return;
     }
@@ -274,7 +275,7 @@ static void shell_job_process_requests(shell_job_state_t *state)
     }
     (void)solar_os_context_take_launch_policy(&state->ctx);
 
-    if (shell_job_foreground_app(state) != NULL) {
+    if (port_shell_foreground_app(state) != NULL) {
         solar_os_shell_io_writeln(solar_os_shell_session_io(state->session),
                                   "another foreground app is already running");
         solar_os_shell_session_prompt(&state->ctx, state->session);
@@ -283,7 +284,7 @@ static void shell_job_process_requests(shell_job_state_t *state)
 
     char owner[SOLAR_OS_APP_OWNER_MAX];
     char busy_owner[SOLAR_OS_APP_OWNER_MAX];
-    shell_job_owner(state, owner, sizeof(owner));
+    port_shell_owner(state, owner, sizeof(owner));
     esp_err_t claim_err = solar_os_app_registry_claim(requested_app,
                                                       owner,
                                                       busy_owner,
@@ -314,24 +315,24 @@ static void shell_job_process_requests(shell_job_state_t *state)
                                  "%s: launch failed: %s\n",
                                  requested_app->name != NULL ? requested_app->name : "app",
                                  esp_err_to_name(start_err));
-        shell_job_release_foreground_app(state, requested_app);
+        port_shell_release_foreground_app(state, requested_app);
         solar_os_shell_session_set_foreground_app(state->session, NULL);
         solar_os_shell_session_prompt(&state->ctx, state->session);
     }
 }
 
-static void shell_job_cleanup(shell_job_state_t *state)
+static void port_shell_cleanup(port_shell_state_t *state)
 {
     if (state == NULL) {
         return;
     }
 
     if (state->session != NULL) {
-        const solar_os_app_t *foreground_app = shell_job_foreground_app(state);
+        const solar_os_app_t *foreground_app = port_shell_foreground_app(state);
         if (foreground_app != NULL && foreground_app->stop != NULL) {
             foreground_app->stop(&state->ctx);
         }
-        shell_job_release_foreground_app(state, foreground_app);
+        port_shell_release_foreground_app(state, foreground_app);
         solar_os_shell_session_set_foreground_app(state->session, NULL);
 
         solar_os_shell_io_t *io = solar_os_shell_session_io(state->session);
@@ -354,17 +355,18 @@ static void shell_job_cleanup(shell_job_state_t *state)
     state->stop_requested = false;
     state->task = NULL;
     state->port_name[0] = '\0';
+    state->used = false;
 }
 
-static void shell_job_task(void *arg)
+static void port_shell_task(void *arg)
 {
-    shell_job_state_t *state = (shell_job_state_t *)arg;
-    uint8_t buffer[SHELL_JOB_READ_BUF];
-    uint32_t last_tick_ms = shell_job_now_ms();
+    port_shell_state_t *state = (port_shell_state_t *)arg;
+    uint8_t buffer[PORT_SHELL_READ_BUF];
+    uint32_t last_tick_ms = port_shell_now_ms();
     uint32_t last_input_ms = last_tick_ms;
 
     solar_os_vt100_input_init(&state->input);
-    shell_job_probe_terminal_size(state);
+    port_shell_probe_terminal_size(state);
 
     esp_err_t err = solar_os_shell_session_start(&state->ctx,
                                                  state->session,
@@ -374,26 +376,29 @@ static void shell_job_task(void *arg)
     if (err != ESP_OK) {
         state->last_error = err;
         SOLAR_OS_LOGW(TAG, "session start failed on %s: %s", state->port_name, esp_err_to_name(err));
-        shell_job_cleanup(state);
+        port_shell_cleanup(state);
         vTaskDelete(NULL);
         return;
     }
 
-    SOLAR_OS_LOGI(TAG, "shell session started on %s", state->port_name);
+    SOLAR_OS_LOGI(TAG,
+                  "session %u shell started on %s",
+                  (unsigned)state->id,
+                  state->port_name);
 
     while (!state->stop_requested) {
         size_t read_len = 0;
         err = solar_os_port_read(&state->port,
-                                 buffer,
-                                 sizeof(buffer),
-                                 SHELL_JOB_READ_TIMEOUT_MS,
-                                 &read_len);
-        const uint32_t now_ms = shell_job_now_ms();
+                                                 buffer,
+                                                 sizeof(buffer),
+                                                 PORT_SHELL_READ_TIMEOUT_MS,
+                                                 &read_len);
+        const uint32_t now_ms = port_shell_now_ms();
         if (err == ESP_OK && read_len > 0) {
             (void)solar_os_vt100_input_feed(&state->input,
                                             buffer,
                                             read_len,
-                                            shell_job_emit_char,
+                                            port_shell_emit_char,
                                             state);
             last_input_ms = now_ms;
         } else if (err != ESP_OK && err != ESP_ERR_TIMEOUT) {
@@ -401,24 +406,27 @@ static void shell_job_task(void *arg)
         }
 
         if (solar_os_vt100_input_pending(&state->input) &&
-            (uint32_t)(now_ms - last_input_ms) >= SHELL_JOB_ESC_FLUSH_MS) {
-            (void)solar_os_vt100_input_flush(&state->input, shell_job_emit_char, state);
+            (uint32_t)(now_ms - last_input_ms) >= PORT_SHELL_ESC_FLUSH_MS) {
+            (void)solar_os_vt100_input_flush(&state->input, port_shell_emit_char, state);
         }
-        shell_job_process_requests(state);
+        port_shell_process_requests(state);
 
-        if ((uint32_t)(now_ms - last_tick_ms) >= SHELL_JOB_TICK_MS) {
+        if ((uint32_t)(now_ms - last_tick_ms) >= PORT_SHELL_TICK_MS) {
             last_tick_ms = now_ms;
-            shell_job_send_tick(state, now_ms);
-            shell_job_process_requests(state);
+            port_shell_send_tick(state, now_ms);
+            port_shell_process_requests(state);
         }
     }
 
-    SOLAR_OS_LOGI(TAG, "shell session stopped on %s", state->port_name);
-    shell_job_cleanup(state);
+    SOLAR_OS_LOGI(TAG,
+                  "session %u shell stopped on %s",
+                  (unsigned)state->id,
+                  state->port_name);
+    port_shell_cleanup(state);
     vTaskDelete(NULL);
 }
 
-static esp_err_t shell_job_validate_port(const char *name)
+static esp_err_t port_shell_validate_port(const char *name)
 {
     solar_os_port_info_t info;
 
@@ -436,92 +444,151 @@ static esp_err_t shell_job_validate_port(const char *name)
     return ESP_OK;
 }
 
-static esp_err_t shell_job_start(solar_os_context_t *ctx, int argc, char **argv)
+static port_shell_state_t *port_shell_by_id(uint8_t session_id)
 {
-    const char *port_name = NULL;
+    if (session_id < SOLAR_OS_PORT_SHELL_SESSION_ID_BASE) {
+        return NULL;
+    }
+
+    const size_t index = (size_t)(session_id - SOLAR_OS_PORT_SHELL_SESSION_ID_BASE);
+    if (index >= PORT_SHELL_MAX || !port_shells[index].used) {
+        return NULL;
+    }
+    return &port_shells[index];
+}
+
+static port_shell_state_t *port_shell_alloc(void)
+{
+    for (size_t i = 0; i < PORT_SHELL_MAX; i++) {
+        if (port_shells[i].used) {
+            continue;
+        }
+        port_shell_state_t *state = &port_shells[i];
+        memset(state, 0, sizeof(*state));
+        state->used = true;
+        state->id = (uint8_t)(SOLAR_OS_PORT_SHELL_SESSION_ID_BASE + i);
+        state->port = (solar_os_port_handle_t)SOLAR_OS_PORT_HANDLE_INIT;
+        state->last_error = ESP_OK;
+        return state;
+    }
+    return NULL;
+}
+
+bool solar_os_port_shell_is_session_id(uint8_t session_id)
+{
+    return port_shell_by_id(session_id) != NULL;
+}
+
+esp_err_t solar_os_port_shell_start(solar_os_context_t *ctx,
+                                    const char *port_name,
+                                    uint8_t *session_id)
+{
     solar_os_port_handle_t port = SOLAR_OS_PORT_HANDLE_INIT;
     solar_os_shell_session_t *session = NULL;
 
-    if (ctx == NULL || argc != 2 || argv == NULL || argv[1] == NULL || argv[1][0] == '\0') {
+    if (ctx == NULL || port_name == NULL || port_name[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
-    if (shell_job.running || shell_job.task != NULL) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    port_name = argv[1];
-    esp_err_t err = shell_job_validate_port(port_name);
+    esp_err_t err = port_shell_validate_port(port_name);
     if (err != ESP_OK) {
         return err;
     }
 
-    err = solar_os_jobs_claim_port(solar_os_shell_job.name, port_name, &port);
+    port_shell_state_t *state = port_shell_alloc();
+    if (state == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    char owner[SOLAR_OS_PORT_OWNER_MAX];
+    port_shell_owner(state, owner, sizeof(owner));
+    err = solar_os_port_claim(port_name, owner, &port);
     if (err != ESP_OK) {
+        state->used = false;
         return err;
     }
 
     session = solar_os_shell_session_create();
     if (session == NULL) {
         (void)solar_os_port_release(&port);
+        state->used = false;
         return ESP_ERR_NO_MEM;
     }
 
-    memset(&shell_job.ctx, 0, sizeof(shell_job.ctx));
-    solar_os_context_init(&shell_job.ctx,
+    memset(&state->ctx, 0, sizeof(state->ctx));
+    solar_os_context_init(&state->ctx,
                           solar_os_context_terminal(ctx),
                           solar_os_context_gfx(ctx));
-    solar_os_context_copy_session_handlers(&shell_job.ctx, ctx);
+    solar_os_context_copy_session_handlers(&state->ctx, ctx);
     solar_os_shell_io_init_port(solar_os_shell_session_io(session),
                                 &port,
-                                SHELL_JOB_DEFAULT_COLS,
-                                SHELL_JOB_DEFAULT_ROWS);
+                                PORT_SHELL_DEFAULT_COLS,
+                                PORT_SHELL_DEFAULT_ROWS);
 
-    shell_job.port = port;
-    shell_job.session = session;
-    shell_job.stop_requested = false;
-    shell_job.running = true;
-    shell_job.last_error = ESP_OK;
-    strlcpy(shell_job.port_name, port_name, sizeof(shell_job.port_name));
+    state->port = port;
+    state->session = session;
+    state->stop_requested = false;
+    state->running = true;
+    state->last_error = ESP_OK;
+    strlcpy(state->port_name, port_name, sizeof(state->port_name));
 
-    if (xTaskCreate(shell_job_task,
-                    "shell_job",
-                    SHELL_JOB_TASK_STACK,
-                    &shell_job,
-                    SHELL_JOB_TASK_PRIORITY,
-                    &shell_job.task) != pdPASS) {
-        shell_job.task = NULL;
-        shell_job.running = false;
-        shell_job.session = NULL;
-        shell_job.port_name[0] = '\0';
+    if (xTaskCreate(port_shell_task,
+                    "port_shell",
+                    PORT_SHELL_TASK_STACK,
+                    state,
+                    PORT_SHELL_TASK_PRIORITY,
+                    &state->task) != pdPASS) {
+        state->task = NULL;
+        state->running = false;
+        state->session = NULL;
+        state->port_name[0] = '\0';
+        state->used = false;
         solar_os_shell_session_destroy(session);
         (void)solar_os_port_release(&port);
         return ESP_ERR_NO_MEM;
     }
 
+    if (session_id != NULL) {
+        *session_id = state->id;
+    }
     return ESP_OK;
 }
 
-static void shell_job_stop(solar_os_context_t *ctx)
+esp_err_t solar_os_port_shell_stop(uint8_t session_id)
 {
-    (void)ctx;
-
-    if (!shell_job.running && shell_job.task == NULL) {
-        return;
+    port_shell_state_t *state = port_shell_by_id(session_id);
+    if (state == NULL) {
+        return ESP_ERR_NOT_FOUND;
     }
 
-    shell_job.stop_requested = true;
-    if (shell_job.task != NULL && shell_job.task != xTaskGetCurrentTaskHandle()) {
-        for (uint32_t i = 0; i < 20 && shell_job.task != NULL; i++) {
+    if (!state->running && state->task == NULL) {
+        return ESP_OK;
+    }
+
+    state->stop_requested = true;
+    if (state->task != NULL && state->task != xTaskGetCurrentTaskHandle()) {
+        for (uint32_t i = 0; i < 20 && state->task != NULL; i++) {
             vTaskDelay(pdMS_TO_TICKS(25));
         }
     }
+    return ESP_OK;
 }
 
-const solar_os_job_t solar_os_shell_job = {
-    .name = "shell",
-    .summary = "VT100 shell on a byte-stream port",
-    .kind = SOLAR_OS_JOB_KIND_INTERACTIVE,
-    .start = shell_job_start,
-    .stop = shell_job_stop,
-    .event = NULL,
-};
+void solar_os_port_shell_print_list(solar_os_shell_io_t *io)
+{
+    if (io == NULL || solar_os_shell_io_kind(io) == SOLAR_OS_SHELL_IO_KIND_NONE) {
+        return;
+    }
+
+    for (size_t i = 0; i < PORT_SHELL_MAX; i++) {
+        const port_shell_state_t *state = &port_shells[i];
+        if (!state->used) {
+            continue;
+        }
+        solar_os_shell_io_printf(io,
+                                 "%-3u %-11s %-9s shell on %s\n",
+                                 (unsigned)state->id,
+                                 state->running ? "active" : "stopping",
+                                 "shell",
+                                 state->port_name[0] != '\0' ? state->port_name : "?");
+    }
+}

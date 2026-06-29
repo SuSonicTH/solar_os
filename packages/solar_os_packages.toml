@@ -19,7 +19,6 @@ members = [
   "service_pwm",
   "job_bridge",
   "job_log",
-  "job_shell",
   "job_batmon",
   "job_daq",
 ]
@@ -271,10 +270,6 @@ sources = ["jobs/solar_os_bridge_job.c"]
 [packages.job_log]
 label = "job.log"
 sources = ["jobs/solar_os_log_job.c"]
-
-[packages.job_shell]
-label = "job.shell"
-sources = ["jobs/solar_os_shell_job.c"]
 
 [packages.job_batmon]
 label = "job.batmon"
