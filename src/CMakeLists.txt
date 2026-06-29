@@ -169,6 +169,7 @@ set(SOLAR_OS_SRCS
     "shell/solar_os_shell_fs.c"
     "shell/solar_os_shell_io.c"
     "shell/solar_os_shell_mqtt.c"
+    "shell/solar_os_shell_network.c"
     "shell/solar_os_shell_system.c"
     "shell/solar_os_vt100.c"
     "jobs/solar_os_job_registry.c"
