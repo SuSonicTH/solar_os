@@ -222,6 +222,7 @@ set(SOLAR_OS_SRCS
     "services/solar_os_power.c"
     "services/solar_os_pwm.c"
     "services/solar_os_sensors.c"
+    "services/solar_os_sessions.c"
     "services/solar_os_splash.c"
     "services/solar_os_storage.c"
     "services/solar_os_stream.c"
