@@ -13,24 +13,31 @@
 #include <unistd.h>
 
 #include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "solar_os_app_registry.h"
 #include "solar_os_keys.h"
 #include "solar_os_shell.h"
 #include "solar_os_storage.h"
 #include "solar_os_terminal.h"
 #include "solar_os_tui.h"
+#include "solar_os_zip.h"
 
 #define FILES_NAME_MAX 96
 #define FILES_MESSAGE_MAX 96
 #define FILES_INPUT_MAX 80
 #define FILES_INITIAL_CAPACITY 32U
 #define FILES_PANEL_MIN_WIDTH 18U
+#define FILES_ZIP_TASK_STACK 24576
+#define FILES_ZIP_TASK_PRIORITY 4
+#define FILES_ZIP_WAIT_POLL_MS 20U
 
 typedef struct {
     char name[FILES_NAME_MAX];
     uint64_t size;
     bool is_dir;
     bool parent;
+    bool selected;
 } files_entry_t;
 
 typedef struct {
@@ -48,7 +55,23 @@ typedef enum {
     FILES_INPUT_NONE,
     FILES_INPUT_MKDIR,
     FILES_INPUT_DELETE_CONFIRM,
+    FILES_INPUT_ZIP,
 } files_input_mode_t;
+
+typedef struct {
+    const char **sources;
+    char (*paths)[SOLAR_OS_STORAGE_PATH_MAX];
+    size_t count;
+    size_t capacity;
+} files_source_list_t;
+
+typedef struct {
+    const char *archive;
+    const char **sources;
+    size_t source_count;
+    volatile bool done;
+    esp_err_t result;
+} files_zip_request_t;
 
 typedef struct {
     solar_os_tui_t tui;
@@ -62,6 +85,8 @@ typedef struct {
 } files_state_t;
 
 static files_state_t files;
+
+static void files_set_message(const char *message);
 
 static void *files_realloc(void *ptr, size_t size)
 {
@@ -507,6 +532,82 @@ static bool files_selected_path(files_pane_t *pane, char *out, size_t out_len)
     return files_join_path(out, out_len, pane->path, entry->name);
 }
 
+static bool files_entry_path(files_pane_t *pane,
+                             const files_entry_t *entry,
+                             char *out,
+                             size_t out_len)
+{
+    if (pane == NULL || entry == NULL || entry->parent) {
+        return false;
+    }
+    return files_join_path(out, out_len, pane->path, entry->name);
+}
+
+static size_t files_selection_count(const files_pane_t *pane)
+{
+    if (pane == NULL) {
+        return 0;
+    }
+
+    size_t count = 0;
+    for (size_t i = 0; i < pane->count; i++) {
+        const files_entry_t *entry = &pane->entries[i];
+        if (entry->selected && !entry->parent) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static files_entry_t *files_first_selected_entry(files_pane_t *pane)
+{
+    if (pane == NULL) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < pane->count; i++) {
+        files_entry_t *entry = &pane->entries[i];
+        if (entry->selected && !entry->parent) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+static void files_advance_to_next_selectable(files_pane_t *pane)
+{
+    if (pane == NULL || pane->count == 0) {
+        return;
+    }
+
+    for (size_t i = pane->cursor + 1U; i < pane->count; i++) {
+        if (!pane->entries[i].parent) {
+            pane->cursor = i;
+            return;
+        }
+    }
+}
+
+static void files_toggle_selection(files_pane_t *pane)
+{
+    files_entry_t *entry = files_selected_entry(pane);
+    if (files_virtual_root_path(pane != NULL ? pane->path : NULL)) {
+        files_set_message("select: open a mount first");
+        return;
+    }
+    if (entry == NULL || entry->parent) {
+        files_set_message("select: no file selected");
+        return;
+    }
+
+    entry->selected = !entry->selected;
+    const size_t count = files_selection_count(pane);
+    char message[FILES_MESSAGE_MAX];
+    snprintf(message, sizeof(message), "%u selected", (unsigned)count);
+    files_set_message(message);
+    files_advance_to_next_selectable(pane);
+}
+
 static void files_clip(char *out, size_t out_len, const char *text, size_t width)
 {
     if (out == NULL || out_len == 0) {
@@ -551,9 +652,10 @@ static void files_draw_entry(files_pane_t *pane,
                              size_t index)
 {
     const bool active = pane_index == files.active;
-    const bool selected = active && index == pane->cursor;
-    const uint8_t base_attr = selected ? SOLAR_OS_TUI_ATTR_INVERSE : SOLAR_OS_TUI_ATTR_NORMAL;
+    const bool current = active && index == pane->cursor;
     files_entry_t *entry = index < pane->count ? &pane->entries[index] : NULL;
+    const bool marked = entry != NULL && entry->selected && !entry->parent;
+    const uint8_t base_attr = current ? SOLAR_OS_TUI_ATTR_INVERSE : SOLAR_OS_TUI_ATTR_NORMAL;
 
     solar_os_tui_fill(&files.tui, row, col, 1, width, ' ', base_attr);
     if (entry == NULL || width < 4) {
@@ -577,13 +679,23 @@ static void files_draw_entry(files_pane_t *pane,
     }
 
     const size_t size_width = width >= 18 ? 8U : 0U;
-    const size_t name_width = size_width > 0 && width > size_width + 1U ?
-        width - size_width - 1U : width;
+    const size_t mark_width = width >= 8 ? 2U : 0U;
+    const size_t content_col = col + mark_width;
+    const size_t content_width = width - mark_width;
+    const size_t name_width = size_width > 0 && content_width > size_width + 1U ?
+        content_width - size_width - 1U : content_width;
     uint8_t name_attr = base_attr;
-    if (entry->is_dir) {
+    if (entry->is_dir || marked) {
         name_attr |= SOLAR_OS_TUI_ATTR_BOLD;
     }
-    files_add_clipped(row, col, name_width, name, name_attr);
+    if (mark_width > 0) {
+        solar_os_tui_putch(&files.tui,
+                           row,
+                           col,
+                           marked ? '*' : ' ',
+                           marked ? (base_attr | SOLAR_OS_TUI_ATTR_BOLD) : base_attr);
+    }
+    files_add_clipped(row, content_col, name_width, name, name_attr);
     if (size_width > 0) {
         files_add_clipped(row, col + width - size_width, size_width, size_text, base_attr);
     }
@@ -640,11 +752,12 @@ static void files_draw_bottom(size_t rows, size_t cols)
     const size_t key_row = rows >= 1 ? rows - 1U : 0;
 
     solar_os_tui_fill(&files.tui, msg_row, 0, 1, cols, ' ', SOLAR_OS_TUI_ATTR_NORMAL);
-    if (files.input_mode == FILES_INPUT_MKDIR) {
+    if (files.input_mode == FILES_INPUT_MKDIR || files.input_mode == FILES_INPUT_ZIP) {
+        const char *label = files.input_mode == FILES_INPUT_ZIP ? "zip: " : "mkdir: ";
         char prompt[FILES_INPUT_MAX + 12];
-        snprintf(prompt, sizeof(prompt), "mkdir: %s", files.input);
+        snprintf(prompt, sizeof(prompt), "%s%s", label, files.input);
         files_add_clipped(msg_row, 0, cols, prompt, SOLAR_OS_TUI_ATTR_NORMAL);
-        solar_os_tui_move(&files.tui, msg_row, strlen("mkdir: ") + files.input_len);
+        solar_os_tui_move(&files.tui, msg_row, strlen(label) + files.input_len);
     } else if (files.input_mode == FILES_INPUT_DELETE_CONFIRM) {
         files_add_clipped(msg_row, 0, cols, files.message, SOLAR_OS_TUI_ATTR_BOLD);
     } else {
@@ -655,14 +768,16 @@ static void files_draw_bottom(size_t rows, size_t cols)
     files_add_clipped(key_row,
                       0,
                       cols,
-                      "F3/v View F4/e Edit F5/c Copy F6/m Move F7/n Mkdir F8/d Del",
+                      "F3 View F4 Edit F5 Copy F6 Move F7 Mkdir F8 Del F9 Zip",
                       SOLAR_OS_TUI_ATTR_INVERSE);
 }
 
 static void files_render(solar_os_context_t *ctx)
 {
     (void)ctx;
-    solar_os_tui_set_cursor_visible(&files.tui, files.input_mode == FILES_INPUT_MKDIR);
+    solar_os_tui_set_cursor_visible(&files.tui,
+                                    files.input_mode == FILES_INPUT_MKDIR ||
+                                    files.input_mode == FILES_INPUT_ZIP);
     const size_t rows = solar_os_tui_rows(&files.tui);
     const size_t cols = solar_os_tui_cols(&files.tui);
     if (rows < 6 || cols < FILES_PANEL_MIN_WIDTH * 2U) {
@@ -932,79 +1047,309 @@ static bool files_remove_recursive(const char *path)
     return ok && solar_os_storage_rmdir(path) == ESP_OK;
 }
 
+static bool files_source_list_alloc(files_source_list_t *list, size_t capacity)
+{
+    memset(list, 0, sizeof(*list));
+    list->capacity = capacity > 0 ? capacity : 1U;
+    list->sources = heap_caps_calloc(list->capacity,
+                                     sizeof(*list->sources),
+                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (list->sources == NULL) {
+        list->sources = heap_caps_calloc(list->capacity,
+                                         sizeof(*list->sources),
+                                         MALLOC_CAP_8BIT);
+    }
+    list->paths = heap_caps_calloc(list->capacity,
+                                   sizeof(*list->paths),
+                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (list->paths == NULL) {
+        list->paths = heap_caps_calloc(list->capacity,
+                                       sizeof(*list->paths),
+                                       MALLOC_CAP_8BIT);
+    }
+
+    if (list->sources == NULL || list->paths == NULL) {
+        heap_caps_free(list->sources);
+        heap_caps_free(list->paths);
+        memset(list, 0, sizeof(*list));
+        return false;
+    }
+    return true;
+}
+
+static void files_source_list_free(files_source_list_t *list)
+{
+    if (list == NULL) {
+        return;
+    }
+
+    heap_caps_free(list->sources);
+    heap_caps_free(list->paths);
+    memset(list, 0, sizeof(*list));
+}
+
+static bool files_source_list_add(files_source_list_t *list, const char *path)
+{
+    if (list == NULL || path == NULL || list->count >= list->capacity) {
+        return false;
+    }
+    if (strlcpy(list->paths[list->count], path, SOLAR_OS_STORAGE_PATH_MAX) >= SOLAR_OS_STORAGE_PATH_MAX) {
+        return false;
+    }
+    list->sources[list->count] = list->paths[list->count];
+    list->count++;
+    return true;
+}
+
+static bool files_collect_sources(files_pane_t *pane, files_source_list_t *list)
+{
+    const size_t selected = files_selection_count(pane);
+    const size_t capacity = selected > 0 ? selected : 1U;
+    if (!files_source_list_alloc(list, capacity)) {
+        files_set_message("zip: no memory");
+        return false;
+    }
+
+    if (selected == 0) {
+        char path[SOLAR_OS_STORAGE_PATH_MAX];
+        files_entry_t *entry = files_selected_entry(pane);
+        if (entry == NULL || entry->parent ||
+            !files_entry_path(pane, entry, path, sizeof(path)) ||
+            !files_source_list_add(list, path)) {
+            files_set_message("zip: no file selected");
+            files_source_list_free(list);
+            return false;
+        }
+        return true;
+    }
+
+    for (size_t i = 0; i < pane->count; i++) {
+        files_entry_t *entry = &pane->entries[i];
+        char path[SOLAR_OS_STORAGE_PATH_MAX];
+        if (!entry->selected || entry->parent) {
+            continue;
+        }
+        if (!files_entry_path(pane, entry, path, sizeof(path)) ||
+            !files_source_list_add(list, path)) {
+            files_set_message("zip: path too long");
+            files_source_list_free(list);
+            return false;
+        }
+    }
+    return true;
+}
+
+static const char *files_zip_error_reason(esp_err_t err)
+{
+    switch (err) {
+    case ESP_ERR_NO_MEM:
+        return "no memory";
+    case ESP_ERR_INVALID_ARG:
+        return "invalid archive path";
+    case ESP_ERR_INVALID_SIZE:
+        return "ZIP64 or path size is not supported";
+    case ESP_ERR_NOT_SUPPORTED:
+        return "unsupported ZIP feature";
+    case ESP_ERR_INVALID_RESPONSE:
+        return "corrupt ZIP archive";
+    case ESP_ERR_INVALID_CRC:
+        return "CRC mismatch";
+    default:
+        break;
+    }
+
+    return errno != 0 ? strerror(errno) : "I/O error";
+}
+
+static void files_zip_task(void *arg)
+{
+    files_zip_request_t *request = (files_zip_request_t *)arg;
+    const solar_os_zip_options_t options = {
+        .store_only = false,
+    };
+
+    request->result = solar_os_zip_create(request->archive,
+                                          request->sources,
+                                          request->source_count,
+                                          &options);
+    request->done = true;
+    vTaskDelete(NULL);
+}
+
+static esp_err_t files_run_zip_task(files_zip_request_t *request)
+{
+    TaskHandle_t task = NULL;
+    request->done = false;
+    request->result = ESP_FAIL;
+
+    const BaseType_t created = xTaskCreatePinnedToCore(files_zip_task,
+                                                       "files_zip",
+                                                       FILES_ZIP_TASK_STACK,
+                                                       request,
+                                                       FILES_ZIP_TASK_PRIORITY,
+                                                       &task,
+                                                       tskNO_AFFINITY);
+    if (created != pdPASS) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    TickType_t poll_ticks = pdMS_TO_TICKS(FILES_ZIP_WAIT_POLL_MS);
+    if (poll_ticks == 0) {
+        poll_ticks = 1;
+    }
+    while (!request->done) {
+        vTaskDelay(poll_ticks);
+    }
+    return request->result;
+}
+
+static bool files_copy_entry(files_pane_t *source_pane,
+                             files_pane_t *dest_pane,
+                             const files_entry_t *entry)
+{
+    char source[SOLAR_OS_STORAGE_PATH_MAX];
+    char dest[SOLAR_OS_STORAGE_PATH_MAX];
+
+    if (entry == NULL || entry->parent) {
+        files_set_message("copy: no file selected");
+        return false;
+    }
+    if (!files_entry_path(source_pane, entry, source, sizeof(source)) ||
+        !files_join_path(dest, sizeof(dest), dest_pane->path, entry->name)) {
+        files_set_message("copy: path too long");
+        return false;
+    }
+    if (files_paths_equal(source, dest)) {
+        files_set_message("copy: source and destination are the same");
+        return false;
+    }
+    if (entry->is_dir && files_path_inside(source, dest)) {
+        files_set_message("copy: destination is inside source");
+        return false;
+    }
+
+    if (!files_copy_recursive(source, dest)) {
+        files_set_error("copy", source);
+        return false;
+    }
+    return true;
+}
+
 static void files_copy_selected(void)
 {
     files_pane_t *source_pane = files_active_pane();
     files_pane_t *dest_pane = files_other_pane();
-    files_entry_t *entry = files_selected_entry(source_pane);
-    char source[SOLAR_OS_STORAGE_PATH_MAX];
-    char dest[SOLAR_OS_STORAGE_PATH_MAX];
 
     if (files_virtual_root_path(source_pane->path) || files_virtual_root_path(dest_pane->path)) {
         files_set_message("copy: open a mount first");
         return;
     }
-    if (entry == NULL || entry->parent) {
-        files_set_message("copy: no file selected");
-        return;
-    }
-    if (!files_selected_path(source_pane, source, sizeof(source)) ||
-        !files_join_path(dest, sizeof(dest), dest_pane->path, entry->name)) {
-        files_set_message("copy: path too long");
-        return;
-    }
-    if (files_paths_equal(source, dest)) {
-        files_set_message("copy: source and destination are the same");
-        return;
-    }
-    if (entry->is_dir && files_path_inside(source, dest)) {
-        files_set_message("copy: destination is inside source");
-        return;
+
+    const size_t selected = files_selection_count(source_pane);
+    size_t copied = 0;
+    bool ok = true;
+
+    if (selected == 0) {
+        ok = files_copy_entry(source_pane, dest_pane, files_selected_entry(source_pane));
+        copied = ok ? 1U : 0U;
+    } else {
+        for (size_t i = 0; i < source_pane->count; i++) {
+            files_entry_t *entry = &source_pane->entries[i];
+            if (!entry->selected || entry->parent) {
+                continue;
+            }
+            if (!files_copy_entry(source_pane, dest_pane, entry)) {
+                ok = false;
+                break;
+            }
+            copied++;
+        }
     }
 
-    if (!files_copy_recursive(source, dest)) {
-        files_set_error("copy", source);
-        return;
+    if (ok) {
+        char message[FILES_MESSAGE_MAX];
+        if (copied == 1U) {
+            strlcpy(message, "copied", sizeof(message));
+        } else {
+            snprintf(message, sizeof(message), "%u copied", (unsigned)copied);
+        }
+        files_set_message(message);
     }
-    files_set_message("copied");
     files_refresh_all();
+}
+
+static bool files_move_entry(files_pane_t *source_pane,
+                             files_pane_t *dest_pane,
+                             const files_entry_t *entry)
+{
+    char source[SOLAR_OS_STORAGE_PATH_MAX];
+    char dest[SOLAR_OS_STORAGE_PATH_MAX];
+
+    if (entry == NULL || entry->parent) {
+        files_set_message("move: no file selected");
+        return false;
+    }
+    if (!files_entry_path(source_pane, entry, source, sizeof(source)) ||
+        !files_join_path(dest, sizeof(dest), dest_pane->path, entry->name)) {
+        files_set_message("move: path too long");
+        return false;
+    }
+    if (files_paths_equal(source, dest)) {
+        files_set_message("move: source and destination are the same");
+        return false;
+    }
+    if (entry->is_dir && files_path_inside(source, dest)) {
+        files_set_message("move: destination is inside source");
+        return false;
+    }
+
+    if (solar_os_storage_rename(source, dest) != ESP_OK) {
+        files_set_error("move", source);
+        return false;
+    }
+    return true;
 }
 
 static void files_move_selected(void)
 {
     files_pane_t *source_pane = files_active_pane();
     files_pane_t *dest_pane = files_other_pane();
-    files_entry_t *entry = files_selected_entry(source_pane);
-    char source[SOLAR_OS_STORAGE_PATH_MAX];
-    char dest[SOLAR_OS_STORAGE_PATH_MAX];
 
     if (files_virtual_root_path(source_pane->path) || files_virtual_root_path(dest_pane->path)) {
         files_set_message("move: open a mount first");
         return;
     }
-    if (entry == NULL || entry->parent) {
-        files_set_message("move: no file selected");
-        return;
-    }
-    if (!files_selected_path(source_pane, source, sizeof(source)) ||
-        !files_join_path(dest, sizeof(dest), dest_pane->path, entry->name)) {
-        files_set_message("move: path too long");
-        return;
-    }
-    if (files_paths_equal(source, dest)) {
-        files_set_message("move: source and destination are the same");
-        return;
-    }
-    if (entry->is_dir && files_path_inside(source, dest)) {
-        files_set_message("move: destination is inside source");
-        return;
+
+    const size_t selected = files_selection_count(source_pane);
+    size_t moved = 0;
+    bool ok = true;
+
+    if (selected == 0) {
+        ok = files_move_entry(source_pane, dest_pane, files_selected_entry(source_pane));
+        moved = ok ? 1U : 0U;
+    } else {
+        for (size_t i = 0; i < source_pane->count; i++) {
+            files_entry_t *entry = &source_pane->entries[i];
+            if (!entry->selected || entry->parent) {
+                continue;
+            }
+            if (!files_move_entry(source_pane, dest_pane, entry)) {
+                ok = false;
+                break;
+            }
+            moved++;
+        }
     }
 
-    if (solar_os_storage_rename(source, dest) != ESP_OK) {
-        files_set_error("move", source);
-        return;
+    if (ok) {
+        char message[FILES_MESSAGE_MAX];
+        if (moved == 1U) {
+            strlcpy(message, "moved", sizeof(message));
+        } else {
+            snprintf(message, sizeof(message), "%u moved", (unsigned)moved);
+        }
+        files_set_message(message);
     }
-    files_set_message("moved");
     files_refresh_all();
 }
 
@@ -1024,32 +1369,73 @@ static void files_begin_delete(void)
 {
     files_pane_t *pane = files_active_pane();
     files_entry_t *entry = files_selected_entry(pane);
+    const size_t selected = files_selection_count(pane);
     if (files_virtual_root_path(pane->path)) {
         files_set_message("delete: open a mount first");
         return;
     }
-    if (entry == NULL || entry->parent) {
+    if (selected == 0 && (entry == NULL || entry->parent)) {
         files_set_message("delete: no file selected");
         return;
     }
 
     files.input_mode = FILES_INPUT_DELETE_CONFIRM;
-    snprintf(files.message, sizeof(files.message), "delete %s? y/N", entry->name);
+    if (selected > 0) {
+        snprintf(files.message, sizeof(files.message), "delete %u selected items? y/N", (unsigned)selected);
+    } else {
+        snprintf(files.message, sizeof(files.message), "delete %s? y/N", entry->name);
+    }
 }
 
 static void files_delete_confirmed(void)
 {
     files_pane_t *pane = files_active_pane();
     char path[SOLAR_OS_STORAGE_PATH_MAX];
+    const size_t selected = files_selection_count(pane);
 
-    if (!files_selected_path(pane, path, sizeof(path))) {
+    if (selected == 0 && !files_selected_path(pane, path, sizeof(path))) {
         files_set_message("delete: no file selected");
+        files.input_mode = FILES_INPUT_NONE;
         return;
     }
-    if (!files_remove_recursive(path)) {
-        files_set_error("delete", path);
+
+    bool ok = true;
+    size_t deleted = 0;
+    if (selected == 0) {
+        if (!files_remove_recursive(path)) {
+            files_set_error("delete", path);
+            ok = false;
+        } else {
+            deleted = 1;
+        }
     } else {
-        files_set_message("deleted");
+        for (size_t i = 0; i < pane->count; i++) {
+            files_entry_t *entry = &pane->entries[i];
+            if (!entry->selected || entry->parent) {
+                continue;
+            }
+            if (!files_entry_path(pane, entry, path, sizeof(path))) {
+                files_set_message("delete: path too long");
+                ok = false;
+                break;
+            }
+            if (!files_remove_recursive(path)) {
+                files_set_error("delete", path);
+                ok = false;
+                break;
+            }
+            deleted++;
+        }
+    }
+
+    if (ok) {
+        char message[FILES_MESSAGE_MAX];
+        if (deleted == 1U) {
+            strlcpy(message, "deleted", sizeof(message));
+        } else {
+            snprintf(message, sizeof(message), "%u deleted", (unsigned)deleted);
+        }
+        files_set_message(message);
     }
     files.input_mode = FILES_INPUT_NONE;
     files_refresh_all();
@@ -1076,7 +1462,134 @@ static void files_create_directory(void)
     files_refresh_all();
 }
 
-static bool files_input_event(uint8_t ch)
+static bool files_zip_archive_path(files_pane_t *dest_pane, char *out, size_t out_len)
+{
+    if (files.input_len == 0 || out == NULL || out_len == 0) {
+        return false;
+    }
+
+    char requested[SOLAR_OS_STORAGE_PATH_MAX];
+    if (strlcpy(requested, files.input, sizeof(requested)) >= sizeof(requested)) {
+        return false;
+    }
+    if (!files_path_has_suffix(requested, ".zip")) {
+        const size_t len = strlen(requested);
+        if (len + strlen(".zip") >= sizeof(requested)) {
+            return false;
+        }
+        strlcpy(&requested[len], ".zip", sizeof(requested) - len);
+    }
+
+    if (requested[0] == '/') {
+        return solar_os_storage_resolve_path(requested, out, out_len) == ESP_OK;
+    }
+    return files_join_path(out, out_len, dest_pane->path, requested);
+}
+
+static bool files_zip_archive_safe(const files_source_list_t *sources, const char *archive)
+{
+    if (sources == NULL || archive == NULL) {
+        return false;
+    }
+
+    for (size_t i = 0; i < sources->count; i++) {
+        const char *source = sources->sources[i];
+        if (files_paths_equal(source, archive)) {
+            files_set_message("zip: archive is one of the sources");
+            return false;
+        }
+
+        struct stat st;
+        if (stat(source, &st) == 0 && S_ISDIR(st.st_mode) && files_path_inside(source, archive)) {
+            files_set_message("zip: archive is inside source");
+            return false;
+        }
+    }
+    return true;
+}
+
+static void files_create_zip(solar_os_context_t *ctx)
+{
+    files_pane_t *source_pane = files_active_pane();
+    files_pane_t *dest_pane = files_other_pane();
+    files_source_list_t sources;
+    char archive[SOLAR_OS_STORAGE_PATH_MAX];
+
+    if (files.input_len == 0) {
+        files.input_mode = FILES_INPUT_NONE;
+        files_set_message("");
+        return;
+    }
+    if (files_virtual_root_path(source_pane->path) || files_virtual_root_path(dest_pane->path)) {
+        files.input_mode = FILES_INPUT_NONE;
+        files_set_message("zip: open a mount first");
+        return;
+    }
+    if (!files_zip_archive_path(dest_pane, archive, sizeof(archive))) {
+        files.input_mode = FILES_INPUT_NONE;
+        files_set_message("zip: invalid archive path");
+        return;
+    }
+    if (!files_collect_sources(source_pane, &sources)) {
+        files.input_mode = FILES_INPUT_NONE;
+        return;
+    }
+    if (!files_zip_archive_safe(&sources, archive)) {
+        files_source_list_free(&sources);
+        files.input_mode = FILES_INPUT_NONE;
+        return;
+    }
+
+    files.input_mode = FILES_INPUT_NONE;
+    files_set_message("zipping...");
+    files_render(ctx);
+
+    files_zip_request_t request = {
+        .archive = archive,
+        .sources = sources.sources,
+        .source_count = sources.count,
+    };
+    const esp_err_t err = files_run_zip_task(&request);
+    files_source_list_free(&sources);
+
+    if (err != ESP_OK) {
+        char message[FILES_MESSAGE_MAX];
+        snprintf(message, sizeof(message), "zip: %s", files_zip_error_reason(err));
+        files_set_message(message);
+    } else {
+        files_set_message("zipped");
+    }
+    files_refresh_all();
+}
+
+static void files_begin_zip(void)
+{
+    files_pane_t *source_pane = files_active_pane();
+    files_pane_t *dest_pane = files_other_pane();
+    files_entry_t *entry = files_selected_entry(source_pane);
+    const size_t selected = files_selection_count(source_pane);
+
+    if (files_virtual_root_path(source_pane->path) || files_virtual_root_path(dest_pane->path)) {
+        files_set_message("zip: open a mount first");
+        return;
+    }
+    if (selected == 0 && (entry == NULL || entry->parent)) {
+        files_set_message("zip: no file selected");
+        return;
+    }
+
+    files.input_mode = FILES_INPUT_ZIP;
+    files_entry_t *name_entry = selected == 1 ? files_first_selected_entry(source_pane) : entry;
+    if (selected <= 1 && name_entry != NULL && !name_entry->parent) {
+        snprintf(files.input, sizeof(files.input), "%s.zip", name_entry->name);
+    } else {
+        strlcpy(files.input, "archive.zip", sizeof(files.input));
+    }
+    files.input_len = strlen(files.input);
+    files_set_message("");
+}
+
+static bool files_input_event(solar_os_context_t *ctx, uint8_t ch)
 {
     if (files.input_mode == FILES_INPUT_DELETE_CONFIRM) {
         if (ch == 'y' || ch == 'Y') {
@@ -1088,7 +1601,7 @@ static bool files_input_event(uint8_t ch)
         return true;
     }
 
-    if (files.input_mode != FILES_INPUT_MKDIR) {
+    if (files.input_mode != FILES_INPUT_MKDIR && files.input_mode != FILES_INPUT_ZIP) {
         return false;
     }
 
@@ -1099,7 +1612,11 @@ static bool files_input_event(uint8_t ch)
         return true;
     case '\r':
     case '\n':
-        files_create_directory();
+        if (files.input_mode == FILES_INPUT_ZIP) {
+            files_create_zip(ctx);
+        } else {
+            files_create_directory();
+        }
         return true;
     case '\b':
     case 0x7f:
@@ -1189,7 +1706,7 @@ static bool files_event(solar_os_context_t *ctx, const solar_os_event_t *event)
     const uint8_t ch = (uint8_t)event->data.ch;
     files_pane_t *pane = files_active_pane();
 
-    if (files_input_event(ch)) {
+    if (files_input_event(ctx, ch)) {
         files_render(ctx);
         return true;
     }
@@ -1239,6 +1756,9 @@ static bool files_event(solar_os_context_t *ctx, const solar_os_event_t *event)
     case '\n':
         files_open_selected(ctx);
         break;
+    case ' ':
+        files_toggle_selection(pane);
+        break;
     case SOLAR_OS_KEY_F3:
     case 'v':
     case 'V': {
@@ -1279,6 +1799,11 @@ static bool files_event(solar_os_context_t *ctx, const solar_os_event_t *event)
     case 'd':
     case 'D':
         files_begin_delete();
+        break;
+    case SOLAR_OS_KEY_F9:
+    case 'z':
+    case 'Z':
+        files_begin_zip();
         break;
     case 'h':
     case 'H':
