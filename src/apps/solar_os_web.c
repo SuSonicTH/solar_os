@@ -152,6 +152,7 @@ typedef struct {
 
 typedef struct {
     bool active;
+    bool suspended;
     bool loading;
     bool loaded;
     bool redraw;
@@ -2542,7 +2543,7 @@ static void web_draw_image(solar_os_gfx_t *gfx,
 static void web_render(solar_os_context_t *ctx)
 {
     solar_os_gfx_t *gfx = solar_os_context_gfx(ctx);
-    if (gfx == NULL) {
+    if (gfx == NULL || web.suspended) {
         return;
     }
 
@@ -3096,6 +3097,7 @@ static esp_err_t web_start(solar_os_context_t *ctx)
     }
 
     web.active = true;
+    web.suspended = false;
     solar_os_context_set_graphics_active(ctx, true);
     (void)web_start_load(ctx, url, false);
     return ESP_OK;
@@ -3114,6 +3116,32 @@ static void web_stop(solar_os_context_t *ctx)
     web_free_buffers();
     web_free_state();
     solar_os_context_set_graphics_active(ctx, false);
+}
+
+static void web_suspend(solar_os_context_t *ctx)
+{
+    web.suspended = true;
+    solar_os_context_set_graphics_active(ctx, false);
+}
+
+static void web_resume(solar_os_context_t *ctx)
+{
+    web.suspended = false;
+    solar_os_context_set_graphics_active(ctx, true);
+    web_render(ctx);
+}
+
+static void web_title(solar_os_context_t *ctx, char *buffer, size_t buffer_len)
+{
+    (void)ctx;
+    if (buffer == NULL || buffer_len == 0) {
+        return;
+    }
+    if (web_state != NULL && web.url[0] != '\0') {
+        snprintf(buffer, buffer_len, "web %s", web.url);
+        return;
+    }
+    strlcpy(buffer, "web", buffer_len);
 }
 
 static bool web_history_back(solar_os_context_t *ctx)
@@ -3208,13 +3236,13 @@ static bool web_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 
     if (event->type == SOLAR_OS_EVENT_TICK) {
         web_drain_events(ctx);
-        if (web.redraw) {
+        if (!web.suspended && web.redraw) {
             web_render(ctx);
         }
         return true;
     }
     if (event->type == SOLAR_OS_EVENT_RESUME) {
-        web_render(ctx);
+        web_resume(ctx);
         return true;
     }
     if (event->type != SOLAR_OS_EVENT_CHAR) {
@@ -3301,7 +3329,11 @@ static bool web_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 const solar_os_app_t solar_os_web_app = {
     .name = "web",
     .summary = "simple web browser",
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
     .start = web_start,
+    .suspend = web_suspend,
+    .resume = web_resume,
     .stop = web_stop,
     .event = web_event,
+    .title = web_title,
 };

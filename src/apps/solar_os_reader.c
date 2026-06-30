@@ -43,6 +43,7 @@ typedef struct {
     solar_os_epub_book_t *epub_book;
     bool loaded;
     bool error_only;
+    bool suspended;
     bool epub;
     bool layout_valid;
     int scroll_y;
@@ -1248,7 +1249,7 @@ static bool reader_handle_search_input(solar_os_context_t *ctx, uint8_t ch)
 static void reader_render(solar_os_context_t *ctx)
 {
     solar_os_gfx_t *gfx = solar_os_context_gfx(ctx);
-    if (gfx == NULL) {
+    if (gfx == NULL || reader.suspended) {
         return;
     }
 
@@ -1320,6 +1321,7 @@ static esp_err_t reader_start(solar_os_context_t *ctx)
     solar_os_doc_set_asset_provider(&reader.doc, &assets);
     solar_os_doc_layout_init(&reader.layout);
     reader.zoom = 1;
+    reader.suspended = false;
 
     if (solar_os_context_gfx(ctx) == NULL) {
         return ESP_ERR_INVALID_STATE;
@@ -1421,6 +1423,33 @@ static void reader_stop(solar_os_context_t *ctx)
     solar_os_epub_close(reader.epub_book);
     memset(&reader, 0, sizeof(reader));
     solar_os_context_set_graphics_active(ctx, false);
+}
+
+static void reader_suspend(solar_os_context_t *ctx)
+{
+    reader_save_position(ctx);
+    reader.suspended = true;
+    solar_os_context_set_graphics_active(ctx, false);
+}
+
+static void reader_resume(solar_os_context_t *ctx)
+{
+    reader.suspended = false;
+    solar_os_context_set_graphics_active(ctx, true);
+    reader_render(ctx);
+}
+
+static void reader_title(solar_os_context_t *ctx, char *buffer, size_t buffer_len)
+{
+    (void)ctx;
+    if (buffer == NULL || buffer_len == 0) {
+        return;
+    }
+    if (reader.display_name[0] != '\0') {
+        snprintf(buffer, buffer_len, "reader %s", reader.display_name);
+        return;
+    }
+    strlcpy(buffer, "reader", buffer_len);
 }
 
 static void reader_page(solar_os_context_t *ctx, bool down)
@@ -1561,7 +1590,7 @@ static bool reader_event(solar_os_context_t *ctx, const solar_os_event_t *event)
         return false;
     }
     if (event->type == SOLAR_OS_EVENT_RESUME) {
-        reader_render(ctx);
+        reader_resume(ctx);
         return true;
     }
     if (event->type != SOLAR_OS_EVENT_CHAR) {
@@ -1578,7 +1607,11 @@ static bool reader_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 const solar_os_app_t solar_os_reader_app = {
     .name = "reader",
     .summary = "graphics Markdown/text reader",
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
     .start = reader_start,
+    .suspend = reader_suspend,
+    .resume = reader_resume,
     .stop = reader_stop,
     .event = reader_event,
+    .title = reader_title,
 };

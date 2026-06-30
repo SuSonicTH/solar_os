@@ -44,6 +44,7 @@ typedef struct {
     view_image_t image;
     view_mode_t mode;
     bool loaded;
+    bool suspended;
     int pan_x;
     int pan_y;
     char path[SOLAR_OS_STORAGE_PATH_MAX];
@@ -762,7 +763,7 @@ static void view_draw_scaled(solar_os_gfx_t *gfx,
 static void view_render(solar_os_context_t *ctx)
 {
     solar_os_gfx_t *gfx = solar_os_context_gfx(ctx);
-    if (gfx == NULL || view_state.image.gray == NULL) {
+    if (gfx == NULL || view_state.suspended || view_state.image.gray == NULL) {
         return;
     }
 
@@ -869,6 +870,7 @@ static esp_err_t view_start(solar_os_context_t *ctx)
     }
 
     view_state.loaded = true;
+    view_state.suspended = false;
     view_state.mode = mode;
     solar_os_context_set_graphics_active(ctx, true);
     view_reset_pan(solar_os_context_gfx(ctx));
@@ -883,15 +885,43 @@ static void view_stop(solar_os_context_t *ctx)
     solar_os_context_set_graphics_active(ctx, false);
 }
 
+static void view_suspend(solar_os_context_t *ctx)
+{
+    view_state.suspended = true;
+    solar_os_context_set_graphics_active(ctx, false);
+}
+
+static void view_resume(solar_os_context_t *ctx)
+{
+    view_state.suspended = false;
+    if (view_state.loaded) {
+        solar_os_context_set_graphics_active(ctx, true);
+        view_render(ctx);
+    }
+}
+
+static void view_title(solar_os_context_t *ctx, char *buffer, size_t buffer_len)
+{
+    (void)ctx;
+    if (buffer == NULL || buffer_len == 0) {
+        return;
+    }
+    const char *slash = strrchr(view_state.path, '/');
+    const char *name = slash != NULL && slash[1] != '\0' ? slash + 1 : view_state.path;
+    if (name != NULL && name[0] != '\0') {
+        snprintf(buffer, buffer_len, "view %s", name);
+        return;
+    }
+    strlcpy(buffer, "view", buffer_len);
+}
+
 static bool view_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
     if (event == NULL) {
         return false;
     }
     if (event->type == SOLAR_OS_EVENT_RESUME) {
-        if (view_state.loaded) {
-            view_render(ctx);
-        }
+        view_resume(ctx);
         return true;
     }
     if (event->type != SOLAR_OS_EVENT_CHAR) {
@@ -953,7 +983,11 @@ static bool view_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 const solar_os_app_t solar_os_view_app = {
     .name = "view",
     .summary = "image viewer",
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
     .start = view_start,
+    .suspend = view_suspend,
+    .resume = view_resume,
     .stop = view_stop,
     .event = view_event,
+    .title = view_title,
 };

@@ -55,6 +55,7 @@ typedef struct {
 
 typedef struct {
     bool running;
+    bool suspended;
     bool paused;
     bool follow;
     bool autoscale;
@@ -954,7 +955,7 @@ static void plot_format_window(char *buffer, size_t buffer_len, uint32_t window_
 static void plot_render(solar_os_context_t *ctx)
 {
     solar_os_gfx_t *gfx = solar_os_context_gfx(ctx);
-    if (gfx == NULL) {
+    if (gfx == NULL || plot.suspended) {
         return;
     }
 
@@ -1140,6 +1141,7 @@ static esp_err_t plot_start(solar_os_context_t *ctx)
         return err;
     }
 
+    plot.suspended = false;
     solar_os_context_set_graphics_active(ctx, true);
     plot_render(ctx);
     plot.running = true;
@@ -1150,10 +1152,37 @@ static void plot_stop(solar_os_context_t *ctx)
 {
     (void)ctx;
     plot.running = false;
+    plot.suspended = false;
     plot_close_live_streams();
     plot_free_buffers();
     solar_os_context_set_graphics_active(ctx, false);
     plot_free_state();
+}
+
+static void plot_suspend(solar_os_context_t *ctx)
+{
+    plot.suspended = true;
+    solar_os_context_set_graphics_active(ctx, false);
+}
+
+static void plot_resume(solar_os_context_t *ctx)
+{
+    plot.suspended = false;
+    solar_os_context_set_graphics_active(ctx, true);
+    plot_render(ctx);
+}
+
+static void plot_title(solar_os_context_t *ctx, char *buffer, size_t buffer_len)
+{
+    (void)ctx;
+    if (buffer == NULL || buffer_len == 0) {
+        return;
+    }
+    if (plot_state != NULL && plot.title[0] != '\0') {
+        snprintf(buffer, buffer_len, "plot %s", plot.title);
+        return;
+    }
+    strlcpy(buffer, "plot", buffer_len);
 }
 
 static void plot_pan_left(void)
@@ -1261,13 +1290,15 @@ static bool plot_event(solar_os_context_t *ctx, const solar_os_event_t *event)
             (int32_t)(event->data.tick_ms - plot.next_sample_ms) >= 0) {
             plot.next_sample_ms = event->data.tick_ms + plot.rate_ms;
             plot_live_sample();
-            plot_render(ctx);
+            if (!plot.suspended) {
+                plot_render(ctx);
+            }
         }
         return true;
     }
 
     if (event->type == SOLAR_OS_EVENT_RESUME) {
-        plot_render(ctx);
+        plot_resume(ctx);
         return true;
     }
 
@@ -1277,7 +1308,11 @@ static bool plot_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 const solar_os_app_t solar_os_plot_app = {
     .name = "plot",
     .summary = "plot DAQ CSV files or scalar streams",
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
     .start = plot_start,
+    .suspend = plot_suspend,
+    .resume = plot_resume,
     .stop = plot_stop,
     .event = plot_event,
+    .title = plot_title,
 };

@@ -978,6 +978,28 @@ static void edit_stop(solar_os_context_t *ctx)
     memset(&editor, 0, sizeof(editor));
 }
 
+static void edit_resume(solar_os_context_t *ctx)
+{
+    editor_render(ctx);
+}
+
+static void edit_title(solar_os_context_t *ctx, char *buffer, size_t buffer_len)
+{
+    (void)ctx;
+    if (buffer == NULL || buffer_len == 0) {
+        return;
+    }
+    if (editor.display_name[0] != '\0') {
+        snprintf(buffer,
+                 buffer_len,
+                 "edit %s%s",
+                 editor.display_name,
+                 editor.dirty ? "*" : "");
+        return;
+    }
+    strlcpy(buffer, "edit", buffer_len);
+}
+
 static void editor_apply_move(bool selecting, void (*move)(void))
 {
     editor_begin_selection(selecting);
@@ -1146,7 +1168,10 @@ static bool edit_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 const solar_os_app_t solar_os_edit_app = {
     .name = "edit",
     .summary = "text editor",
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
     .start = edit_start,
+    .resume = edit_resume,
     .stop = edit_stop,
     .event = edit_event,
+    .title = edit_title,
 };

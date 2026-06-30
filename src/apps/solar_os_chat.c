@@ -53,6 +53,7 @@ typedef struct {
 
 typedef struct {
     bool active;
+    bool suspended;
     bool redraw;
     bool join_pending;
     chat_app_focus_t focus;
@@ -1668,6 +1669,38 @@ static void chat_stop(solar_os_context_t *ctx)
     chat_app_free_state();
 }
 
+static void chat_suspend(solar_os_context_t *ctx)
+{
+    (void)ctx;
+    if (chat_app_state != NULL) {
+        chat_app.suspended = true;
+    }
+}
+
+static void chat_resume(solar_os_context_t *ctx)
+{
+    (void)ctx;
+    if (chat_app_state == NULL) {
+        return;
+    }
+    chat_app.suspended = false;
+    chat_app.redraw = true;
+    chat_render();
+}
+
+static void chat_title(solar_os_context_t *ctx, char *buffer, size_t buffer_len)
+{
+    (void)ctx;
+    if (buffer == NULL || buffer_len == 0) {
+        return;
+    }
+    if (chat_app_state != NULL) {
+        snprintf(buffer, buffer_len, "chat #%s", chat_current_channel_name());
+        return;
+    }
+    strlcpy(buffer, "chat", buffer_len);
+}
+
 static bool chat_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
     if (event == NULL) {
@@ -1680,7 +1713,7 @@ static bool chat_event(solar_os_context_t *ctx, const solar_os_event_t *event)
             solar_os_context_request_exit(ctx);
             return true;
         }
-        if (chat_app.redraw) {
+        if (!chat_app.suspended && chat_app.redraw) {
             chat_render();
         }
         return true;
@@ -1721,7 +1754,11 @@ static bool chat_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 const solar_os_app_t solar_os_chat_app = {
     .name = "chat",
     .summary = "gateway chat client",
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
     .start = chat_start,
+    .suspend = chat_suspend,
+    .resume = chat_resume,
     .stop = chat_stop,
     .event = chat_event,
+    .title = chat_title,
 };

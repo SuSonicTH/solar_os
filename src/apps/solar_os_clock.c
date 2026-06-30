@@ -35,6 +35,7 @@ typedef struct {
     volatile bool alarm_sound_stop_requested;
     volatile bool alarm_sound_running;
     TaskHandle_t alarm_sound_task;
+    bool suspended;
     bool stopwatch_running;
     uint32_t stopwatch_accum_ms;
     uint32_t stopwatch_start_ms;
@@ -418,6 +419,10 @@ static void clock_render_time(solar_os_context_t *ctx)
 
 static void clock_render(solar_os_context_t *ctx)
 {
+    if (clock_state.suspended) {
+        return;
+    }
+
     const uint32_t now_ms = clock_now_ms();
 
     switch (clock_state.mode) {
@@ -580,6 +585,7 @@ static esp_err_t clock_start(solar_os_context_t *ctx)
     clock_state.alarm_start_ms = clock_now_ms();
     clock_state.alarm_done = false;
     clock_state.alarm_sound_stop_requested = false;
+    clock_state.suspended = false;
     clock_state.stopwatch_running = false;
     clock_state.stopwatch_accum_ms = 0;
     clock_state.stopwatch_start_ms = clock_now_ms();
@@ -591,7 +597,42 @@ static esp_err_t clock_start(solar_os_context_t *ctx)
 static void clock_stop(solar_os_context_t *ctx)
 {
     clock_alarm_sound_stop();
+    clock_state.suspended = false;
     solar_os_context_set_graphics_active(ctx, false);
+}
+
+static void clock_suspend(solar_os_context_t *ctx)
+{
+    clock_state.suspended = true;
+    solar_os_context_set_graphics_active(ctx, false);
+}
+
+static void clock_resume(solar_os_context_t *ctx)
+{
+    clock_state.suspended = false;
+    clock_state.last_second = UINT32_MAX;
+    solar_os_context_set_graphics_active(ctx, true);
+    clock_render(ctx);
+}
+
+static void clock_title(solar_os_context_t *ctx, char *buffer, size_t buffer_len)
+{
+    (void)ctx;
+    if (buffer == NULL || buffer_len == 0) {
+        return;
+    }
+    switch (clock_state.mode) {
+    case CLOCK_MODE_ALARM:
+        strlcpy(buffer, "clock alarm", buffer_len);
+        break;
+    case CLOCK_MODE_STOPWATCH:
+        strlcpy(buffer, "clock stopwatch", buffer_len);
+        break;
+    case CLOCK_MODE_TIME:
+    default:
+        strlcpy(buffer, "clock", buffer_len);
+        break;
+    }
 }
 
 static void clock_stopwatch_toggle(void)
@@ -650,14 +691,15 @@ static bool clock_event(solar_os_context_t *ctx, const solar_os_event_t *event)
         }
         if (second != clock_state.last_second) {
             clock_state.last_second = second;
-            clock_render(ctx);
+            if (!clock_state.suspended) {
+                clock_render(ctx);
+            }
         }
         return true;
     }
 
     if (event->type == SOLAR_OS_EVENT_RESUME) {
-        clock_state.last_second = UINT32_MAX;
-        clock_render(ctx);
+        clock_resume(ctx);
         return true;
     }
 
@@ -667,7 +709,11 @@ static bool clock_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 const solar_os_app_t solar_os_clock_app = {
     .name = "clock",
     .summary = "clock, countdown alarm, stopwatch",
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
     .start = clock_start,
+    .suspend = clock_suspend,
+    .resume = clock_resume,
     .stop = clock_stop,
     .event = clock_event,
+    .title = clock_title,
 };

@@ -26,6 +26,8 @@ typedef struct {
     bool has_return_session;
     uint8_t id;
     uint8_t return_session_id;
+    int argc;
+    uint32_t argv_hash;
     const solar_os_app_t *app;
     solar_os_terminal_t *terminal;
     char title[SOLAR_OS_SESSION_TITLE_MAX];
@@ -148,6 +150,7 @@ static solar_os_session_entry_t *session_return_target(uint8_t session_id,
 }
 
 static bool switch_to_session(solar_os_session_entry_t *session, bool show_overlay);
+static bool close_session(solar_os_session_entry_t *session, bool preserve_context);
 
 static solar_os_session_entry_t *ensure_shell_session(void)
 {
@@ -185,6 +188,51 @@ static solar_os_session_entry_t *session_find_by_app(const solar_os_app_t *app)
         }
     }
     return NULL;
+}
+
+static uint32_t session_context_argv_hash(const solar_os_context_t *ctx)
+{
+    uint32_t hash = 2166136261UL;
+    if (ctx == NULL) {
+        return hash;
+    }
+
+    const int argc = solar_os_context_argc(ctx);
+    hash ^= (uint32_t)argc;
+    hash *= 16777619UL;
+    for (int i = 0; i < argc; i++) {
+        const char *arg = solar_os_context_argv(ctx, i);
+        if (arg == NULL) {
+            arg = "";
+        }
+        for (const unsigned char *p = (const unsigned char *)arg; *p != '\0'; p++) {
+            hash ^= (uint32_t)*p;
+            hash *= 16777619UL;
+        }
+        hash ^= 0xffU;
+        hash *= 16777619UL;
+    }
+    return hash;
+}
+
+static bool session_args_match_context(const solar_os_session_entry_t *session,
+                                       const solar_os_context_t *ctx)
+{
+    return session != NULL &&
+        ctx != NULL &&
+        session->argc == solar_os_context_argc(ctx) &&
+        session->argv_hash == session_context_argv_hash(ctx);
+}
+
+static void session_store_context_args(solar_os_session_entry_t *session,
+                                       const solar_os_context_t *ctx)
+{
+    if (session == NULL || ctx == NULL) {
+        return;
+    }
+
+    session->argc = solar_os_context_argc(ctx);
+    session->argv_hash = session_context_argv_hash(ctx);
 }
 
 static solar_os_session_entry_t *session_alloc(const solar_os_app_t *app)
@@ -401,6 +449,7 @@ static bool start_or_resume_session(solar_os_session_entry_t *session)
     solar_os_context_set_graphics_active(session_state.ctx, false);
 
     if (!session->started) {
+        session_store_context_args(session, session_state.ctx);
         if (session->app->start != NULL) {
             const esp_err_t app_err = session->app->start(session_state.ctx);
             if (app_err != ESP_OK) {
@@ -476,6 +525,12 @@ static bool switch_to_app(const solar_os_app_t *app)
 
     if (use_display_session && app_is_resumable(app)) {
         solar_os_session_entry_t *session = session_find_by_app(app);
+        if (session != NULL &&
+            session->started &&
+            !session_args_match_context(session, session_state.ctx)) {
+            (void)close_session(session, true);
+            session = NULL;
+        }
         if (session == NULL) {
             session = session_alloc(app);
         }
@@ -541,6 +596,12 @@ static bool switch_to_child_app(const solar_os_app_t *app)
     solar_os_session_entry_t *parent = session_state.foreground_session;
     if (app_is_resumable(app)) {
         solar_os_session_entry_t *session = session_find_by_app(app);
+        if (session != NULL &&
+            session->started &&
+            !session_args_match_context(session, session_state.ctx)) {
+            (void)close_session(session, true);
+            session = NULL;
+        }
         if (session == NULL) {
             session = session_alloc(app);
         }

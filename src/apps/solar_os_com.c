@@ -329,6 +329,20 @@ static void com_stop(solar_os_context_t *ctx)
     memset(&com_app, 0, sizeof(com_app));
 }
 
+static void com_resume(solar_os_context_t *ctx)
+{
+    com_drain_rx(ctx);
+}
+
+static void com_title(solar_os_context_t *ctx, char *buffer, size_t buffer_len)
+{
+    (void)ctx;
+    if (buffer == NULL || buffer_len == 0) {
+        return;
+    }
+    strlcpy(buffer, "com uart0", buffer_len);
+}
+
 static bool com_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
     if (event == NULL) {
@@ -359,7 +373,10 @@ static bool com_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 const solar_os_app_t solar_os_com_app = {
     .name = "com",
     .summary = "serial terminal",
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
     .start = com_start,
+    .resume = com_resume,
     .stop = com_stop,
     .event = com_event,
+    .title = com_title,
 };
