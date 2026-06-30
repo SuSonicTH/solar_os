@@ -6,9 +6,9 @@
 
 #include "esp_err.h"
 #include "solar_os.h"
+#include "solar_os_config.h"
 #include "solar_os_port.h"
 
-#define SOLAR_OS_JOBS_MAX 12
 #define SOLAR_OS_JOB_OWNER_MAX SOLAR_OS_PORT_OWNER_MAX
 #define SOLAR_OS_JOB_RESOURCE_MAX 4
 #define SOLAR_OS_JOB_RESOURCE_NAME_MAX 64

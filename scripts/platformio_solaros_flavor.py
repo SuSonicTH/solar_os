@@ -49,7 +49,20 @@ if os.environ.get("SOLAR_OS_BOARD"):
 
 stamp_dir = build_dir / "generated" / "solar_os"
 stamp_path = stamp_dir / "platformio_build_selection.txt"
+tracked_files = (
+    flavor_file,
+    project_dir / "packages" / "solar_os_packages.toml",
+    project_dir / "scripts" / "generate_flavor_config.py",
+    project_dir / "src" / "CMakeLists.txt",
+)
 stamp = f"board={board}\nflavor={flavor}\n"
+for tracked_file in tracked_files:
+    stat = tracked_file.stat()
+    stamp += (
+        f"{tracked_file.relative_to(project_dir)}:"
+        f"{stat.st_mtime_ns}:"
+        f"{stat.st_size}\n"
+    )
 
 previous = stamp_path.read_text(encoding="utf-8") if stamp_path.exists() else ""
 if previous != stamp and (previous or (build_dir / "CMakeCache.txt").exists()):

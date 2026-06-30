@@ -116,8 +116,8 @@ esp_err_t solar_os_jobs_init(void)
 
     memset(job_runtimes, 0, sizeof(job_runtimes));
     job_runtime_count = solar_os_job_registry_count();
-    if (job_runtime_count > SOLAR_OS_JOBS_MAX) {
-        job_runtime_count = SOLAR_OS_JOBS_MAX;
+    if (job_runtime_count != SOLAR_OS_JOBS_MAX) {
+        return ESP_ERR_INVALID_SIZE;
     }
 
     for (size_t i = 0; i < job_runtime_count; i++) {
