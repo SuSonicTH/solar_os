@@ -8,7 +8,12 @@
 
 #include "diskio_impl.h"
 #include "diskio_sdmmc.h"
+#if SOLAR_OS_BOARD_STORAGE_SDSPI
+#include "driver/sdspi_host.h"
+#include "spi_bus.h"
+#else
 #include "driver/sdmmc_host.h"
+#endif
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
@@ -37,6 +42,10 @@ static const char *TAG = "sd_card";
 static sdmmc_card_t card_storage;
 static sdmmc_card_t *card;
 static sdmmc_host_t host;
+#if SOLAR_OS_BOARD_STORAGE_SDSPI
+static bool sdspi_device_ready;
+static bool sdspi_bus_acquired;
+#endif
 static BYTE physical_pdrv = FF_DRV_NOT_USED;
 static bool card_ready;
 static bool diskio_registered;
@@ -89,6 +98,27 @@ static void set_mount_error_status(esp_err_t err)
     }
 }
 
+static void sd_card_deinit_host(void)
+{
+#if SOLAR_OS_BOARD_STORAGE_SDSPI
+    if (sdspi_device_ready) {
+        host.deinit_p(host.slot);
+        sdspi_device_ready = false;
+    }
+    if (sdspi_bus_acquired) {
+        solar_os_spi_bus_release();
+        sdspi_bus_acquired = false;
+    }
+#else
+    if (host.flags & SDMMC_HOST_FLAG_DEINIT_ARG) {
+        host.deinit_p(host.slot);
+    } else {
+        host.deinit();
+    }
+#endif
+}
+
+#if SOLAR_OS_BOARD_STORAGE_SDMMC
 static void sd_card_make_slot_config(sdmmc_slot_config_t *slot_config)
 {
     *slot_config = (sdmmc_slot_config_t)SDMMC_SLOT_CONFIG_DEFAULT();
@@ -100,15 +130,19 @@ static void sd_card_make_slot_config(sdmmc_slot_config_t *slot_config)
 #endif
     slot_config->flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
 }
+#endif
 
-static void sd_card_deinit_host(void)
+#if SOLAR_OS_BOARD_STORAGE_SDSPI
+static void sd_card_make_spi_config(sdspi_device_config_t *device_config)
 {
-    if (host.flags & SDMMC_HOST_FLAG_DEINIT_ARG) {
-        host.deinit_p(host.slot);
-    } else {
-        host.deinit();
-    }
+    *device_config = (sdspi_device_config_t)SDSPI_DEVICE_CONFIG_DEFAULT();
+    device_config->host_id = solar_os_spi_bus_host();
+    device_config->gpio_cs = SOLAR_OS_BOARD_PIN_SD_CARD_CS;
+    device_config->gpio_cd = SDSPI_SLOT_NO_CD;
+    device_config->gpio_wp = SDSPI_SLOT_NO_WP;
+    device_config->gpio_int = SDSPI_SLOT_NO_INT;
 }
+#endif
 
 static esp_err_t sd_card_read_sector(uint64_t sector, uint8_t *buffer)
 {
@@ -450,10 +484,39 @@ static esp_err_t ensure_card_ready(void)
         return ESP_OK;
     }
 
+#if SOLAR_OS_BOARD_STORAGE_SDSPI
+    esp_err_t ret = solar_os_spi_bus_acquire();
+    if (ret != ESP_OK) {
+        set_mount_error_status(ret);
+        return ret;
+    }
+    sdspi_bus_acquired = true;
+
+    host = (sdmmc_host_t)SDSPI_HOST_DEFAULT();
+    host.slot = solar_os_spi_bus_host();
+    sdspi_device_config_t device_config;
+    sd_card_make_spi_config(&device_config);
+
+    ret = host.init();
+    if (ret != ESP_OK) {
+        sd_card_deinit_host();
+        set_mount_error_status(ret);
+        return ret;
+    }
+
+    sdspi_dev_handle_t sdspi_handle = -1;
+    ret = sdspi_host_init_device(&device_config, &sdspi_handle);
+    if (ret != ESP_OK) {
+        sd_card_deinit_host();
+        set_mount_error_status(ret);
+        return ret;
+    }
+    host.slot = sdspi_handle;
+    sdspi_device_ready = true;
+#else
     host = (sdmmc_host_t)SDMMC_HOST_DEFAULT();
     sdmmc_slot_config_t slot_config;
     sd_card_make_slot_config(&slot_config);
-
     esp_err_t ret = host.init();
     if (ret != ESP_OK) {
         set_mount_error_status(ret);
@@ -466,6 +529,7 @@ static esp_err_t ensure_card_ready(void)
         set_mount_error_status(ret);
         return ret;
     }
+#endif
 
     memset(&card_storage, 0, sizeof(card_storage));
     ret = sdmmc_card_init(&host, &card_storage);

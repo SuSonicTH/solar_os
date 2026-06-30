@@ -92,4 +92,3 @@ bool solar_os_board_storage_get_block(size_t index, solar_os_board_storage_block
     storage_block_from_driver(block, &driver_block);
     return true;
 }
-

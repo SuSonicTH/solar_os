@@ -1,6 +1,7 @@
 #pragma once
 
 #include "driver/gpio.h"
+#include "driver/spi_master.h"
 #include "driver/uart.h"
 #include "solar_os_adc_dpad.h"
 #include "solar_os_buttons.h"
@@ -14,6 +15,12 @@
 #define SOLAR_OS_BOARD_UART_PORT UART_NUM_0
 #define SOLAR_OS_BOARD_PIN_UART_TX GPIO_NUM_1
 #define SOLAR_OS_BOARD_PIN_UART_RX GPIO_NUM_3
+
+#define SOLAR_OS_BOARD_SPI_HOST SPI3_HOST
+#define SOLAR_OS_BOARD_PIN_SPI_SCLK GPIO_NUM_18
+#define SOLAR_OS_BOARD_PIN_SPI_MISO GPIO_NUM_19
+#define SOLAR_OS_BOARD_PIN_SPI_MOSI GPIO_NUM_23
+#define SOLAR_OS_BOARD_SPI_MAX_TRANSFER_SZ 4096
 
 #define SOLAR_OS_BOARD_PIN_TFT_DC GPIO_NUM_21
 #define SOLAR_OS_BOARD_PIN_TFT_CS GPIO_NUM_5
