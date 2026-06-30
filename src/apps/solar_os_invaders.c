@@ -8,12 +8,15 @@
 
 #include "solar_os_log.h"
 #include "freertos/FreeRTOS.h"
+#include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "solar_os_audio.h"
+#include "solar_os_task.h"
+#endif
 #include "solar_os_gfx.h"
 #include "solar_os_keys.h"
-#include "solar_os_task.h"
 
 #define INVADERS_ROWS 4
 #define INVADERS_COLS 9
@@ -84,6 +87,7 @@ typedef struct {
     bool phase;
 } invaders_state_t;
 
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
 typedef struct {
     QueueHandle_t queue;
     TaskHandle_t task;
@@ -91,9 +95,11 @@ typedef struct {
     volatile bool task_done;
     bool disabled;
 } invaders_audio_t;
+#endif
 
 static const char *TAG = "solar_os_invaders";
 static invaders_state_t invaders;
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
 static invaders_audio_t invaders_audio;
 
 static uint8_t invaders_sound_volume(void)
@@ -222,6 +228,20 @@ static void invaders_sound_queue(invaders_sound_t sound)
     }
     (void)xQueueSend(invaders_audio.queue, &sound, 0);
 }
+#else
+static void invaders_sound_start(void)
+{
+}
+
+static void invaders_sound_stop(void)
+{
+}
+
+static void invaders_sound_queue(invaders_sound_t sound)
+{
+    (void)sound;
+}
+#endif
 
 static int invaders_screen_w(solar_os_gfx_t *gfx)
 {
