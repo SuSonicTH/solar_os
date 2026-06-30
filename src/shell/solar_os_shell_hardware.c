@@ -171,6 +171,7 @@ static void format_bytes(uint64_t bytes, char *buffer, size_t buffer_len)
              units[unit_index]);
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_SD
 static void sd_print_status(solar_os_shell_io_t *term)
 {
     char status[64];
@@ -288,7 +289,9 @@ void solar_os_shell_cmd_sd(solar_os_context_t *ctx, int argc, char **argv)
 
     sd_print_usage(term);
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_BATTERY
 static void battery_print_usage(solar_os_shell_io_t *term)
 {
     solar_os_shell_io_writeln(term, "usage:");
@@ -626,7 +629,9 @@ void solar_os_shell_cmd_battery(solar_os_context_t *ctx, int argc, char **argv)
 
     battery_print_usage(term);
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
 static void ble_format_bda(const uint8_t *bda, char *buffer, size_t buffer_len)
 {
     if (buffer == NULL || buffer_len == 0) {
@@ -1234,8 +1239,10 @@ void solar_os_shell_cmd_ble(solar_os_context_t *ctx, int argc, char **argv)
 
     solar_os_shell_io_writeln(term, "usage: ble [status|scan|pair|cancel|forget|gatt]");
 }
+#endif
 
 
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
 static void audio_print_gain(solar_os_shell_io_t *term, float gain_db)
 {
     int tenths = (int)((gain_db * 10.0f) + (gain_db >= 0.0f ? 0.5f : -0.5f));
@@ -1487,7 +1494,9 @@ void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char **argv)
         audio_print_usage(term);
     }
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_UART
 static void uart_print_status(solar_os_shell_io_t *term)
 {
     solar_os_uart_status_t status;
@@ -1749,7 +1758,9 @@ void solar_os_shell_cmd_uart(solar_os_context_t *ctx, int argc, char **argv)
         uart_print_usage(term);
     }
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO
 static void gpio_print_usage(solar_os_shell_io_t *term)
 {
     solar_os_shell_io_writeln(term, "usage:");
@@ -1905,7 +1916,9 @@ void solar_os_shell_cmd_gpio(solar_os_context_t *ctx, int argc, char **argv)
         gpio_print_usage(term);
     }
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_ADC
 static void adc_print_usage(solar_os_shell_io_t *term)
 {
     solar_os_shell_io_writeln(term, "usage:");
@@ -2015,7 +2028,9 @@ void solar_os_shell_cmd_adc(solar_os_context_t *ctx, int argc, char **argv)
         adc_print_usage(term);
     }
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_PWM
 static void pwm_print_usage(solar_os_shell_io_t *term)
 {
     solar_os_shell_io_writeln(term, "usage:");
@@ -2144,7 +2159,9 @@ void solar_os_shell_cmd_pwm(solar_os_context_t *ctx, int argc, char **argv)
         pwm_print_usage(term);
     }
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_I2C
 static void i2c_print_status(solar_os_shell_io_t *term)
 {
     if (!solar_os_board_has(SOLAR_OS_BOARD_CAP_I2C)) {
@@ -2314,6 +2331,7 @@ void solar_os_shell_cmd_i2c(solar_os_context_t *ctx, int argc, char **argv)
         i2c_print_usage(term);
     }
 }
+#endif
 
 static void print_rtc_warning(solar_os_shell_io_t *term, const solar_os_datetime_t *datetime)
 {
@@ -2445,6 +2463,7 @@ void solar_os_shell_cmd_time(solar_os_context_t *ctx, int argc, char **argv)
                              (unsigned)datetime.second);
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_SENSORS
 static bool read_environment_for_shell(solar_os_shell_io_t *term, solar_os_environment_t *environment)
 {
     const esp_err_t err = solar_os_sensors_read_environment(environment);
@@ -2496,3 +2515,4 @@ void solar_os_shell_cmd_humidity(solar_os_context_t *ctx, int argc, char **argv)
 
     terminal_printf_fixed_1(term, "Humidity", environment.humidity_percent, "%RH");
 }
+#endif

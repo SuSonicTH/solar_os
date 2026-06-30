@@ -19,6 +19,7 @@ class PackageDef:
     sources: tuple[str, ...]
     requires: tuple[str, ...]
     capabilities: tuple[str, ...]
+    any_capabilities: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class GroupDef:
     sources: tuple[str, ...]
     requires: tuple[str, ...]
     capabilities: tuple[str, ...]
+    any_capabilities: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,22 @@ def string_tuple(value: object, key: str) -> tuple[str, ...]:
     return tuple(value)
 
 
+def normalize_capability(value: str) -> str:
+    return value.strip().lower().replace("-", "_")
+
+
+def normalize_capability_tuple(values: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(normalize_capability(value) for value in values if normalize_capability(value))
+
+
+def parse_capability_list(text: str) -> set[str]:
+    return {
+        normalize_capability(value)
+        for value in text.replace(",", " ").split()
+        if normalize_capability(value)
+    }
+
+
 def package_macro(name: str) -> str:
     return f"SOLAR_OS_PACKAGE_{name.upper()}"
 
@@ -112,7 +130,11 @@ def load_catalog(path: Path) -> PackageCatalog:
             label=str(raw.get("label") or default_package_label(name)),
             sources=string_tuple(raw.get("sources"), f"packages.{name}.sources"),
             requires=string_tuple(raw.get("requires"), f"packages.{name}.requires"),
-            capabilities=string_tuple(raw.get("capabilities"), f"packages.{name}.capabilities"),
+            capabilities=normalize_capability_tuple(
+                string_tuple(raw.get("capabilities"), f"packages.{name}.capabilities")),
+            any_capabilities=normalize_capability_tuple(
+                string_tuple(raw.get("any_capabilities"),
+                             f"packages.{name}.any_capabilities")),
         )
 
     groups = tuple(raw_groups.keys())
@@ -133,7 +155,11 @@ def load_catalog(path: Path) -> PackageCatalog:
             triggers=triggers,
             sources=string_tuple(raw.get("sources"), f"groups.{name}.sources"),
             requires=string_tuple(raw.get("requires"), f"groups.{name}.requires"),
-            capabilities=string_tuple(raw.get("capabilities"), f"groups.{name}.capabilities"),
+            capabilities=normalize_capability_tuple(
+                string_tuple(raw.get("capabilities"), f"groups.{name}.capabilities")),
+            any_capabilities=normalize_capability_tuple(
+                string_tuple(raw.get("any_capabilities"),
+                             f"groups.{name}.any_capabilities")),
         )
 
     if "core" not in group_defs:
@@ -201,6 +227,57 @@ def load_flavor(path: Path,
             groups_effective[group] = True
 
     return name, description, groups_effective, packages_enabled
+
+
+def capabilities_supported(required: tuple[str, ...],
+                           any_required: tuple[str, ...],
+                           available: set[str]) -> bool:
+    if any(capability not in available for capability in required):
+        return False
+    if any_required and not any(capability in available for capability in any_required):
+        return False
+    return True
+
+
+def apply_board_capability_pruning(catalog: PackageCatalog,
+                                   groups_enabled: dict[str, bool],
+                                   packages_enabled: dict[str, bool],
+                                   available_capabilities: set[str]) -> tuple[dict[str, bool],
+                                                                              dict[str, bool]]:
+    pruned_packages = dict(packages_enabled)
+    for package, package_def in catalog.package_defs.items():
+        if not pruned_packages[package]:
+            continue
+        if not capabilities_supported(package_def.capabilities,
+                                      package_def.any_capabilities,
+                                      available_capabilities):
+            pruned_packages[package] = False
+
+    pruned_groups = dict(groups_enabled)
+    for group, group_def in catalog.group_defs.items():
+        if not pruned_groups[group]:
+            continue
+        if not capabilities_supported(group_def.capabilities,
+                                      group_def.any_capabilities,
+                                      available_capabilities):
+            pruned_groups[group] = False
+            continue
+        if group != "core" and not group_def.sources and not any(
+                pruned_packages[package] for package in group_def.members):
+            pruned_groups[group] = False
+
+    pruned_groups["core"] = True
+    for group, group_def in catalog.group_defs.items():
+        if pruned_groups[group]:
+            continue
+        if capabilities_supported(group_def.capabilities,
+                                  group_def.any_capabilities,
+                                  available_capabilities) and any(
+                                      pruned_packages[package]
+                                      for package in group_def.triggers):
+            pruned_groups[group] = True
+
+    return pruned_groups, pruned_packages
 
 
 def collect_sources(catalog: PackageCatalog,
@@ -330,6 +407,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--packages", default=DEFAULT_PACKAGE_CATALOG, type=Path)
+    parser.add_argument("--board-capabilities", default="")
     parser.add_argument("--header", required=True, type=Path)
     parser.add_argument("--cmake", required=True, type=Path)
     args = parser.parse_args()
@@ -337,6 +415,12 @@ def main() -> int:
     try:
         catalog = load_catalog(args.packages)
         name, description, groups_enabled, packages_enabled = load_flavor(args.input, catalog)
+        groups_enabled, packages_enabled = apply_board_capability_pruning(
+            catalog,
+            groups_enabled,
+            packages_enabled,
+            parse_capability_list(args.board_capabilities),
+        )
         write_if_changed(args.header,
                          generate_header(name,
                                          description,

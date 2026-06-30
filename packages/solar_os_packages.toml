@@ -28,6 +28,7 @@ members = ["service_audio", "app_aplay", "app_arecord"]
 triggers = ["app_aplay", "app_arecord"]
 
 [groups.net]
+capabilities = ["wifi"]
 members = [
   "service_wifi",
   "app_ssh",
@@ -77,10 +78,12 @@ requires = [
 [groups.media]
 members = ["app_view"]
 triggers = ["app_view"]
+capabilities = ["gfx"]
 
 [groups.games]
 members = ["app_invaders"]
 triggers = ["app_invaders"]
+capabilities = ["gfx"]
 
 [groups.python]
 members = ["app_python"]
@@ -189,29 +192,35 @@ sources = [
 label = "service.wifi"
 sources = ["services/solar_os_wifi.c"]
 requires = ["esp_event", "esp_netif", "esp_wifi", "lwip", "nvs_flash"]
+capabilities = ["wifi"]
 
 [packages.service_ble]
 label = "service.ble"
 sources = ["services/solar_os_ble_keyboard.c"]
 requires = ["bt", "esp_hid", "nvs_flash"]
+capabilities = ["ble"]
 
 [packages.service_sd]
 label = "service.sd"
+capabilities = ["sd"]
 
 [packages.service_audio]
 label = "service.audio"
 sources = ["services/solar_os_audio.c"]
 requires = ["esp_codec_dev", "esp_driver_i2s", "minimp3"]
+capabilities = ["audio"]
 
 [packages.service_gpio]
 label = "service.gpio"
 sources = ["services/solar_os_gpio.c"]
 requires = ["esp_driver_gpio"]
+capabilities = ["gpio"]
 
 [packages.service_i2c]
 label = "service.i2c"
 sources = ["services/solar_os_i2c.c"]
 requires = ["esp_driver_i2c"]
+capabilities = ["i2c"]
 
 [packages.service_json]
 label = "service.json"
@@ -227,51 +236,63 @@ requires = ["mbedtls"]
 label = "service.uart"
 sources = ["services/solar_os_uart.c"]
 requires = ["esp_driver_uart", "nvs_flash"]
+capabilities = ["uart"]
 
 [packages.service_battery]
 label = "service.battery"
 sources = ["services/solar_os_battery.c"]
+capabilities = ["battery"]
 
 [packages.service_rtc]
 label = "service.rtc"
+capabilities = ["rtc"]
 
 [packages.service_sensors]
 label = "service.sensors"
 sources = ["services/solar_os_sensors.c"]
+any_capabilities = ["temperature", "humidity"]
 
 [packages.service_adc]
 label = "service.adc"
 sources = ["services/solar_os_adc.c"]
 requires = ["esp_adc", "esp_driver_gpio"]
+capabilities = ["adc", "gpio"]
 
 [packages.service_pwm]
 label = "service.pwm"
 sources = ["services/solar_os_pwm.c"]
 requires = ["esp_driver_gpio", "esp_driver_ledc"]
+capabilities = ["pwm", "gpio"]
 
 [packages.app_aplay]
 label = "app.aplay"
 sources = ["apps/solar_os_audio_apps.c"]
+capabilities = ["audio"]
 
 [packages.app_arecord]
 label = "app.arecord"
 sources = ["apps/solar_os_audio_apps.c"]
+capabilities = ["audio"]
 
 [packages.app_ssh]
 label = "app.ssh"
 sources = ["apps/solar_os_ssh.c"]
+capabilities = ["wifi"]
 
 [packages.app_scp]
 label = "app.scp"
 sources = ["apps/solar_os_scp.c"]
+capabilities = ["wifi"]
 
 [packages.app_curl]
 label = "app.curl"
 sources = ["apps/solar_os_curl.c"]
+capabilities = ["wifi"]
 
 [packages.app_telnet]
 label = "app.telnet"
 sources = ["apps/solar_os_telnet.c"]
+capabilities = ["wifi"]
 
 [packages.app_web]
 label = "app.web"
@@ -282,42 +303,47 @@ sources = [
   "services/solar_os_xml.c",
 ]
 requires = ["esp_http_client", "stb_image", "webp_decoder"]
-capabilities = ["psram"]
+capabilities = ["psram", "wifi", "gfx"]
 
 [packages.app_chat]
 label = "app.chat"
 sources = ["apps/solar_os_chat.c"]
-capabilities = ["psram"]
+capabilities = ["psram", "wifi"]
 
 [packages.app_view]
 label = "app.view"
 sources = ["apps/solar_os_view.c"]
 requires = ["stb_image", "webp_decoder"]
-capabilities = ["psram"]
+capabilities = ["psram", "gfx"]
 
 [packages.app_invaders]
 label = "app.invaders"
 sources = ["apps/solar_os_invaders.c"]
+capabilities = ["gfx"]
 
 [packages.app_python]
 label = "app.python"
 sources = ["apps/solar_os_python.c"]
 requires = ["micropython_embed"]
-capabilities = ["psram"]
+capabilities = ["psram", "audio", "gpio", "adc", "pwm", "i2c", "battery"]
+any_capabilities = ["temperature", "humidity"]
 
 [packages.app_lua]
 label = "app.lua"
 sources = ["apps/solar_os_lua.c"]
 requires = ["lua"]
-capabilities = ["psram"]
+capabilities = ["psram", "audio", "gpio", "adc", "pwm", "i2c", "battery"]
+any_capabilities = ["temperature", "humidity"]
 
 [packages.app_clock]
 label = "app.clock"
 sources = ["apps/solar_os_clock.c"]
+capabilities = ["gfx"]
 
 [packages.app_com]
 label = "app.com"
 sources = ["apps/solar_os_com.c"]
+capabilities = ["uart"]
 
 [packages.app_edit]
 label = "app.edit"
@@ -341,7 +367,7 @@ sources = [
   "services/solar_os_xml.c",
 ]
 requires = ["stb_image", "webp_decoder"]
-capabilities = ["psram"]
+capabilities = ["psram", "gfx"]
 
 [packages.app_files]
 label = "app.files"
@@ -354,6 +380,7 @@ sources = ["apps/solar_os_notes.c"]
 [packages.app_plot]
 label = "app.plot"
 sources = ["apps/solar_os_plot.c"]
+capabilities = ["gfx"]
 
 [packages.app_sheet]
 label = "app.sheet"
@@ -362,16 +389,18 @@ sources = ["apps/solar_os_sheet.c"]
 [packages.job_httpd]
 label = "job.httpd"
 sources = ["jobs/solar_os_httpd_job.c"]
+capabilities = ["wifi"]
 
 [packages.job_chatd]
 label = "job.chatd"
 sources = ["jobs/solar_os_chatd_job.c"]
-capabilities = ["psram"]
+capabilities = ["psram", "wifi"]
 
 [packages.job_slip]
 label = "job.slip"
 sources = ["jobs/solar_os_slip_job.c"]
 requires = ["lwip"]
+capabilities = ["wifi"]
 
 [packages.job_bridge]
 label = "job.bridge"
@@ -384,6 +413,7 @@ sources = ["jobs/solar_os_log_job.c"]
 [packages.job_batmon]
 label = "job.batmon"
 sources = ["jobs/solar_os_batmon_job.c"]
+capabilities = ["battery"]
 
 [packages.job_daq]
 label = "job.daq"
@@ -392,3 +422,4 @@ sources = ["jobs/solar_os_daq_job.c"]
 [packages.job_ntp_sync]
 label = "job.ntp-sync"
 sources = ["jobs/solar_os_ntp_sync_job.c"]
+capabilities = ["wifi"]

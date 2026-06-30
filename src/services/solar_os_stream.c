@@ -7,13 +7,24 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_SERVICE_ADC
 #include "solar_os_adc.h"
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
 #include "solar_os_audio.h"
+#endif
 #include "solar_os_board_caps.h"
+#if SOLAR_OS_PACKAGE_SERVICE_BATTERY
 #include "solar_os_battery.h"
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO
 #include "solar_os_gpio.h"
+#endif
 #include "solar_os_port.h"
+#if SOLAR_OS_PACKAGE_SERVICE_SENSORS
 #include "solar_os_sensors.h"
+#endif
 #include "solar_os_time.h"
 
 #define STREAM_BYTE_READ_MAX 64U
@@ -43,6 +54,7 @@ typedef struct {
 } stream_source_t;
 
 static const stream_source_t singleton_streams[] = {
+#if SOLAR_OS_PACKAGE_SERVICE_SENSORS
     {
         .id = "temperature",
         .type = SOLAR_OS_STREAM_TYPE_SCALAR,
@@ -61,6 +73,8 @@ static const stream_source_t singleton_streams[] = {
         .kind = STREAM_KIND_HUMIDITY,
         .required_capability = SOLAR_OS_BOARD_CAP_HUMIDITY,
     },
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_BATTERY
     {
         .id = "battery",
         .type = SOLAR_OS_STREAM_TYPE_SCALAR,
@@ -70,6 +84,8 @@ static const stream_source_t singleton_streams[] = {
         .kind = STREAM_KIND_BATTERY,
         .required_capability = SOLAR_OS_BOARD_CAP_BATTERY,
     },
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
     {
         .id = "mic0",
         .type = SOLAR_OS_STREAM_TYPE_SCALAR,
@@ -90,6 +106,7 @@ static const stream_source_t singleton_streams[] = {
         .required_capability = SOLAR_OS_BOARD_CAP_AUDIO,
         .index = 1,
     },
+#endif
 };
 
 static bool stream_parse_pin_id(const char *id, const char *prefix, int *pin)
@@ -196,6 +213,7 @@ static bool stream_find_singleton(const char *id, const stream_source_t **source
 
 static size_t stream_runtime_adc_count(void)
 {
+#if SOLAR_OS_PACKAGE_SERVICE_ADC
     size_t count = 0;
     for (size_t i = 0; i < solar_os_adc_pin_count(); i++) {
         solar_os_adc_pin_info_t info;
@@ -206,10 +224,14 @@ static size_t stream_runtime_adc_count(void)
         }
     }
     return count;
+#else
+    return 0;
+#endif
 }
 
 static bool stream_adc_info_by_runtime_index(size_t target, solar_os_stream_info_t *out)
 {
+#if SOLAR_OS_PACKAGE_SERVICE_ADC
     size_t seen = 0;
 
     for (size_t i = 0; i < solar_os_adc_pin_count(); i++) {
@@ -234,10 +256,16 @@ static bool stream_adc_info_by_runtime_index(size_t target, solar_os_stream_info
     }
 
     return false;
+#else
+    (void)target;
+    (void)out;
+    return false;
+#endif
 }
 
 static size_t stream_runtime_gpio_count(void)
 {
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO
     size_t count = 0;
     for (size_t i = 0; i < solar_os_gpio_pin_count(); i++) {
         solar_os_gpio_pin_info_t info;
@@ -246,10 +274,14 @@ static size_t stream_runtime_gpio_count(void)
         }
     }
     return count;
+#else
+    return 0;
+#endif
 }
 
 static bool stream_gpio_info_by_runtime_index(size_t target, solar_os_stream_info_t *out)
 {
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO
     size_t seen = 0;
 
     for (size_t i = 0; i < solar_os_gpio_pin_count(); i++) {
@@ -272,6 +304,11 @@ static bool stream_gpio_info_by_runtime_index(size_t target, solar_os_stream_inf
     }
 
     return false;
+#else
+    (void)target;
+    (void)out;
+    return false;
+#endif
 }
 
 static size_t stream_readable_port_count(void)
@@ -365,6 +402,7 @@ esp_err_t solar_os_stream_get_info(const char *id, solar_os_stream_info_t *info)
     }
 
     int pin = -1;
+#if SOLAR_OS_PACKAGE_SERVICE_ADC
     if (stream_parse_pin_id(id, "adc", &pin)) {
         solar_os_adc_pin_info_t adc_info;
         for (size_t i = 0; i < solar_os_adc_pin_count(); i++) {
@@ -383,7 +421,9 @@ esp_err_t solar_os_stream_get_info(const char *id, solar_os_stream_info_t *info)
         }
         return ESP_ERR_NOT_FOUND;
     }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO
     if (stream_parse_pin_id(id, "gpio", &pin)) {
         solar_os_gpio_pin_info_t gpio_info;
         if (solar_os_gpio_get_pin_info_by_pin(pin, &gpio_info) &&
@@ -398,6 +438,7 @@ esp_err_t solar_os_stream_get_info(const char *id, solar_os_stream_info_t *info)
         }
         return ESP_ERR_NOT_FOUND;
     }
+#endif
 
     solar_os_port_info_t port_info;
     if (solar_os_port_get_info(id, &port_info) == ESP_OK &&
@@ -536,6 +577,7 @@ static bool stream_csv_append(char *line, size_t line_len, int offset, const cha
     return written >= 0 && (size_t)written < line_len - (size_t)offset;
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_SENSORS
 static esp_err_t stream_record_temperature(solar_os_stream_csv_record_t *record)
 {
     solar_os_environment_t environment;
@@ -569,7 +611,9 @@ static esp_err_t stream_record_humidity(solar_os_stream_csv_record_t *record)
         ESP_OK :
         ESP_ERR_INVALID_SIZE;
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_BATTERY
 static esp_err_t stream_record_battery(solar_os_stream_csv_record_t *record)
 {
     solar_os_battery_status_t status;
@@ -595,7 +639,9 @@ static esp_err_t stream_record_battery(solar_os_stream_csv_record_t *record)
         ESP_OK :
         ESP_ERR_INVALID_SIZE;
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_ADC
 static esp_err_t stream_record_adc(const char *id, solar_os_stream_csv_record_t *record)
 {
     int pin = -1;
@@ -625,7 +671,9 @@ static esp_err_t stream_record_adc(const char *id, solar_os_stream_csv_record_t 
         ESP_OK :
         ESP_ERR_INVALID_SIZE;
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO
 static esp_err_t stream_record_gpio(const char *id, solar_os_stream_csv_record_t *record)
 {
     int pin = -1;
@@ -647,7 +695,9 @@ static esp_err_t stream_record_gpio(const char *id, solar_os_stream_csv_record_t
         ESP_OK :
         ESP_ERR_INVALID_SIZE;
 }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
 static esp_err_t stream_record_mic(const char *id,
                                    const solar_os_stream_read_options_t *options,
                                    solar_os_stream_csv_record_t *record)
@@ -683,6 +733,7 @@ static esp_err_t stream_record_mic(const char *id,
         ESP_OK :
         ESP_ERR_INVALID_SIZE;
 }
+#endif
 
 static void stream_hex_encode(const uint8_t *data, size_t len, char *out, size_t out_len)
 {
@@ -781,24 +832,34 @@ esp_err_t solar_os_stream_read_csv(solar_os_stream_handle_t *handle,
         return stream_record_bytes(handle, options, record);
     }
 
+#if SOLAR_OS_PACKAGE_SERVICE_SENSORS
     if (strcmp(handle->id, "temperature") == 0) {
         return stream_record_temperature(record);
     }
     if (strcmp(handle->id, "humidity") == 0) {
         return stream_record_humidity(record);
     }
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_BATTERY
     if (strcmp(handle->id, "battery") == 0) {
         return stream_record_battery(record);
     }
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
     if (strcmp(handle->id, "mic0") == 0 || strcmp(handle->id, "mic1") == 0) {
         return stream_record_mic(handle->id, options, record);
     }
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_ADC
     if (strncmp(handle->id, "adc", 3) == 0) {
         return stream_record_adc(handle->id, record);
     }
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO
     if (strncmp(handle->id, "gpio", 4) == 0) {
         return stream_record_gpio(handle->id, record);
     }
+#endif
 
     return ESP_ERR_NOT_FOUND;
 }

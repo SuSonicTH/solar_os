@@ -522,6 +522,7 @@ static void enter_light_sleep(const char *reason)
         return;
     }
 
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
     if (board_has(SOLAR_OS_BOARD_CAP_BLE)) {
         const esp_err_t ble_sleep_err =
             solar_os_ble_keyboard_prepare_sleep(BLE_SLEEP_DISCONNECT_TIMEOUT_MS);
@@ -531,6 +532,7 @@ static void enter_light_sleep(const char *reason)
                           esp_err_to_name(ble_sleep_err));
         }
     }
+#endif
 
     solar_os_power_note_sleep_enter(millis_u32());
     err = esp_light_sleep_start();
@@ -559,10 +561,12 @@ static void enter_light_sleep(const char *reason)
         SOLAR_OS_LOGW(TAG, "light sleep rejected: %s", esp_err_to_name(err));
         solar_os_power_note_sleep_exit(now_ms, (int)wake_cause, wake_ext1, false);
     }
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
     if (board_has(SOLAR_OS_BOARD_CAP_BLE)) {
         solar_os_ble_keyboard_resume();
         (void)solar_os_power_hold_automatic_light_sleep(BLE_RESUME_PM_HOLDOFF_MS);
     }
+#endif
     (void)solar_os_power_end_explicit_sleep();
 
     update_status();
@@ -655,6 +659,7 @@ static void poll_key_button(void)
     }
 
     key_long_press_fired = true;
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
     if (board_has(SOLAR_OS_BOARD_CAP_BLE)) {
         const bool cancel_pairing = solar_os_ble_keyboard_is_pairing();
         const esp_err_t err = cancel_pairing ?
@@ -674,6 +679,7 @@ static void poll_key_button(void)
                           esp_err_to_name(err));
         }
     }
+#endif
 }
 
 static void dispatch_char_to_foreground(char ch)
@@ -701,6 +707,7 @@ static void dispatch_keyboard_chars(void)
     char chars[32];
     size_t count;
 
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
     if (!board_has(SOLAR_OS_BOARD_CAP_BLE)) {
         return;
     }
@@ -732,6 +739,10 @@ static void dispatch_keyboard_chars(void)
             process_app_requests();
         }
     }
+#else
+    (void)chars;
+    (void)count;
+#endif
 }
 
 static void dispatch_app_tick(void)
@@ -763,6 +774,7 @@ static void update_status(void)
 
     solar_os_status_bar_t status = {0};
 
+#if SOLAR_OS_PACKAGE_SERVICE_BATTERY
     solar_os_battery_status_t battery;
     if (board_has(SOLAR_OS_BOARD_CAP_BATTERY) &&
         solar_os_battery_get_status(&battery) == ESP_OK) {
@@ -770,22 +782,28 @@ static void update_status(void)
         status.battery_percent = battery.percent;
         status.battery_external_power = battery.external_power;
     }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
     if (board_has(SOLAR_OS_BOARD_CAP_BLE)) {
         status.ble_connected = solar_os_ble_keyboard_is_connected();
         status.ble_scanning = solar_os_ble_keyboard_is_scanning();
     }
+#endif
     if (board_has(SOLAR_OS_BOARD_CAP_SD)) {
         status.sd_mounted = solar_os_storage_is_mounted();
     }
 
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
     solar_os_audio_status_t audio;
     if (board_has(SOLAR_OS_BOARD_CAP_AUDIO)) {
         solar_os_audio_get_status(&audio);
         status.audio_enabled = audio.initialized;
         status.audio_volume = audio.volume;
     }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_WIFI
     solar_os_wifi_status_t wifi;
     if (board_has(SOLAR_OS_BOARD_CAP_WIFI)) {
         solar_os_wifi_get_status(&wifi);
@@ -796,6 +814,7 @@ static void update_status(void)
             status.wifi_level = wifi_level_from_rssi(wifi.rssi);
         }
     }
+#endif
 
     solar_os_datetime_t datetime;
     if (board_has(SOLAR_OS_BOARD_CAP_RTC) &&
@@ -837,19 +856,23 @@ static void init_peripherals(void)
         }
     }
 
+#if SOLAR_OS_PACKAGE_SERVICE_BATTERY
     if (board_has(SOLAR_OS_BOARD_CAP_BATTERY)) {
         const esp_err_t battery_err = solar_os_battery_init();
         if (battery_err != ESP_OK) {
             SOLAR_OS_LOGW(TAG, "Battery monitor unavailable: %s", esp_err_to_name(battery_err));
         }
     }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_WIFI
     if (board_has(SOLAR_OS_BOARD_CAP_WIFI)) {
         const esp_err_t wifi_err = solar_os_wifi_init();
         if (wifi_err != ESP_OK) {
             SOLAR_OS_LOGW(TAG, "Wi-Fi unavailable: %s", esp_err_to_name(wifi_err));
         }
     }
+#endif
 
     const esp_err_t ota_err = solar_os_ota_init();
     if (ota_err != ESP_OK) {
@@ -868,46 +891,58 @@ static void init_peripherals(void)
     }
 #endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_UART
     if (board_has(SOLAR_OS_BOARD_CAP_UART)) {
         const esp_err_t uart_err = solar_os_uart_init();
         if (uart_err != ESP_OK) {
             SOLAR_OS_LOGW(TAG, "UART unavailable: %s", esp_err_to_name(uart_err));
         }
     }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO
     if (board_has(SOLAR_OS_BOARD_CAP_GPIO)) {
         const esp_err_t gpio_err = solar_os_gpio_init();
         if (gpio_err != ESP_OK) {
             SOLAR_OS_LOGW(TAG, "GPIO service unavailable: %s", esp_err_to_name(gpio_err));
         }
     }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_ADC
     if (board_has(SOLAR_OS_BOARD_CAP_ADC)) {
         const esp_err_t adc_err = solar_os_adc_init();
         if (adc_err != ESP_OK) {
             SOLAR_OS_LOGW(TAG, "ADC service unavailable: %s", esp_err_to_name(adc_err));
         }
     }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_PWM
     if (board_has(SOLAR_OS_BOARD_CAP_PWM)) {
         const esp_err_t pwm_err = solar_os_pwm_init();
         if (pwm_err != ESP_OK) {
             SOLAR_OS_LOGW(TAG, "PWM service unavailable: %s", esp_err_to_name(pwm_err));
         }
     }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_I2C
     if (board_has(SOLAR_OS_BOARD_CAP_I2C)) {
         const esp_err_t i2c_err = solar_os_i2c_init();
         if (i2c_err != ESP_OK) {
             SOLAR_OS_LOGW(TAG, "I2C unavailable: %s", esp_err_to_name(i2c_err));
         } else {
+#if SOLAR_OS_PACKAGE_SERVICE_RTC
             if (board_has(SOLAR_OS_BOARD_CAP_RTC)) {
                 const esp_err_t rtc_err = solar_os_time_init();
                 if (rtc_err != ESP_OK) {
                     SOLAR_OS_LOGW(TAG, "RTC unavailable: %s", esp_err_to_name(rtc_err));
                 }
             }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_SENSORS
             if (board_has(SOLAR_OS_BOARD_CAP_TEMPERATURE) ||
                 board_has(SOLAR_OS_BOARD_CAP_HUMIDITY)) {
                 const esp_err_t sensors_err = solar_os_sensors_init();
@@ -915,15 +950,19 @@ static void init_peripherals(void)
                     SOLAR_OS_LOGW(TAG, "Sensors unavailable: %s", esp_err_to_name(sensors_err));
                 }
             }
+#endif
         }
     }
+#endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
     if (board_has(SOLAR_OS_BOARD_CAP_BLE)) {
         const esp_err_t ble_err = solar_os_ble_keyboard_init();
         if (ble_err != ESP_OK) {
             SOLAR_OS_LOGE(TAG, "BLE keyboard init failed: %s", esp_err_to_name(ble_err));
         }
     }
+#endif
 }
 
 static void process_app_requests(void)

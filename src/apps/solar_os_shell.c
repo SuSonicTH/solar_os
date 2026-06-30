@@ -149,31 +149,55 @@ static const shell_command_t shell_builtin_commands[] = {
     {"port", "show byte-stream ports", solar_os_shell_cmd_port},
     {"xfer", "transfer files over byte-stream ports", solar_os_shell_cmd_xfer},
     {"df", "show filesystem free space", solar_os_shell_cmd_df},
+#if SOLAR_OS_PACKAGE_SERVICE_SD
     {"sd", "SD card control", solar_os_shell_cmd_sd},
+#endif
     {"top", "show task resource usage", solar_os_shell_cmd_top},
+#if SOLAR_OS_PACKAGE_SERVICE_BATTERY
     {"battery", "battery status and config", solar_os_shell_cmd_battery},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_ADC
     {"adc", "read expansion analog inputs", solar_os_shell_cmd_adc},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
     {"ble", "BLE keyboard control", solar_os_shell_cmd_ble},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_WIFI
     {"wifi", "Wi-Fi station control", solar_os_shell_cmd_wifi},
+#endif
 #if SOLAR_OS_PACKAGE_NET
     {"mqtt", "MQTT client", solar_os_shell_cmd_mqtt},
     {"ping", "send ICMP echo requests", solar_os_shell_cmd_ping},
     {"netscan", "scan TCP ports", solar_os_shell_cmd_netscan},
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
     {"audio", "audio codec tools", solar_os_shell_cmd_audio},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_UART
     {"uart", "UART port tools", solar_os_shell_cmd_uart},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_I2C
     {"i2c", "I2C bus tools", solar_os_shell_cmd_i2c},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_GPIO
     {"gpio", "expansion GPIO tools", solar_os_shell_cmd_gpio},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_PWM
     {"pwm", "expansion PWM output", solar_os_shell_cmd_pwm},
+#endif
     {"date", "read or set local date", solar_os_shell_cmd_date},
     {"time", "read or set local time", solar_os_shell_cmd_time},
+#if SOLAR_OS_PACKAGE_NET
     {"ntp", "sync RTC from network time", solar_os_shell_cmd_ntp},
+#endif
     {"ota", "OTA update control", solar_os_shell_cmd_ota},
 #if SOLAR_OS_PACKAGE_NET
     {"sshkey", "manage SSH keys", solar_os_shell_cmd_sshkey},
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_SENSORS
     {"temperature", "read SHTC3 temperature", solar_os_shell_cmd_temperature},
     {"humidity", "read SHTC3 humidity", solar_os_shell_cmd_humidity},
+#endif
     {"cd", "change directory", solar_os_shell_cmd_cd},
     {"ls", "list SD card files", solar_os_shell_cmd_ls},
     {"cat", "print a small text file", solar_os_shell_cmd_cat},
