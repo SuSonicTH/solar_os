@@ -1306,15 +1306,22 @@ static void audio_print_status(solar_os_shell_io_t *term)
     solar_os_shell_io_write(term, "Mic gain: ");
     audio_print_gain(term, status.mic_gain_db);
     solar_os_shell_io_put_char(term, '\n');
-    solar_os_shell_io_printf(term,
-                             "I2S: port %d mclk %d bclk %d ws %d din %d dout %d\n",
-                             status.i2s_port,
-                             status.mclk_pin,
-                             status.bclk_pin,
-                             status.ws_pin,
-                             status.din_pin,
-                             status.dout_pin);
-    solar_os_shell_io_printf(term, "PA pin: %d\n", status.pa_pin);
+    if (status.i2s_port >= 0) {
+        solar_os_shell_io_printf(term,
+                                 "I2S: port %d mclk %d bclk %d ws %d din %d dout %d\n",
+                                 status.i2s_port,
+                                 status.mclk_pin,
+                                 status.bclk_pin,
+                                 status.ws_pin,
+                                 status.din_pin,
+                                 status.dout_pin);
+        solar_os_shell_io_printf(term, "PA pin: %d\n", status.pa_pin);
+    } else if (status.dout_pin >= 0 || status.din_pin >= 0) {
+        solar_os_shell_io_printf(term,
+                                 "DAC: pos %d neg %d\n",
+                                 status.dout_pin,
+                                 status.din_pin);
+    }
 }
 
 static void audio_print_usage(solar_os_shell_io_t *term)

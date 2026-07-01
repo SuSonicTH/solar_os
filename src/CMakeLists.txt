@@ -205,11 +205,14 @@ function(solar_os_require_board_driver is_enabled capability_name variable_name)
 endfunction()
 
 set(SOLAR_OS_BOARD_NEEDS_I2C OFF)
+if(NOT DEFINED SOLAR_OS_BOARD_AUDIO_NEEDS_I2C)
+    set(SOLAR_OS_BOARD_AUDIO_NEEDS_I2C OFF)
+endif()
 if(SOLAR_OS_BOARD_HAS_I2C OR
         SOLAR_OS_BOARD_HAS_RTC OR
         SOLAR_OS_BOARD_HAS_TEMPERATURE OR
         SOLAR_OS_BOARD_HAS_HUMIDITY OR
-        SOLAR_OS_BOARD_HAS_AUDIO)
+        SOLAR_OS_BOARD_AUDIO_NEEDS_I2C)
     set(SOLAR_OS_BOARD_NEEDS_I2C ON)
 endif()
 set(SOLAR_OS_BOARD_HAS_SENSORS OFF)
