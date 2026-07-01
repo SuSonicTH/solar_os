@@ -27,7 +27,6 @@ esp_err_t audio_dac_board_init(void);
 void audio_dac_board_deinit(void);
 esp_err_t audio_dac_board_set_volume(uint8_t volume);
 esp_err_t audio_dac_board_set_mic_gain(float gain_db);
-esp_err_t audio_dac_board_play_tone(uint32_t frequency_hz, uint32_t duration_ms, uint8_t volume);
 esp_err_t audio_dac_board_write(const void *data, size_t len);
 esp_err_t audio_dac_board_read(void *data, size_t len);
 void audio_dac_board_get_status(audio_dac_board_status_t *status);

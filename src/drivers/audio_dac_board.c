@@ -4,7 +4,6 @@
 
 #include "driver/dac_continuous.h"
 #include "driver/gpio.h"
-#include "driver/ledc.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -23,11 +22,6 @@
 #define AUDIO_DAC_WRITE_TIMEOUT_MS 1000
 #define AUDIO_DAC_MIDPOINT 128U
 #define AUDIO_DAC_TARGET_QUEUED_US 32000LL
-#define AUDIO_DAC_TONE_DUTY_RES LEDC_TIMER_13_BIT
-#define AUDIO_DAC_TONE_DUTY_HALF (1U << 12)
-#define AUDIO_DAC_TONE_TIMER LEDC_TIMER_1
-#define AUDIO_DAC_TONE_CHANNEL LEDC_CHANNEL_7
-#define AUDIO_DAC_TONE_MODE LEDC_LOW_SPEED_MODE
 
 #ifndef SOLAR_OS_BOARD_PIN_AUDIO_AMP_EN
 #define SOLAR_OS_BOARD_PIN_AUDIO_AMP_EN GPIO_NUM_NC
@@ -39,7 +33,6 @@
 
 typedef struct {
     bool initialized;
-    bool amp_initialized;
     bool volume_set;
     dac_continuous_handle_t handle;
     uint8_t *buffer;
@@ -106,9 +99,6 @@ static esp_err_t audio_dac_init_amp(void)
     if (SOLAR_OS_BOARD_PIN_AUDIO_AMP_EN == GPIO_NUM_NC) {
         return ESP_OK;
     }
-    if (audio_dac.amp_initialized) {
-        return ESP_OK;
-    }
 
     const gpio_config_t config = {
         .pin_bit_mask = 1ULL << SOLAR_OS_BOARD_PIN_AUDIO_AMP_EN,
@@ -119,20 +109,9 @@ static esp_err_t audio_dac_init_amp(void)
     };
     esp_err_t ret = gpio_config(&config);
     if (ret == ESP_OK) {
-        audio_dac.amp_initialized = true;
         audio_dac_set_amp_enabled(false);
     }
     return ret;
-}
-
-static void audio_dac_stop_tone(void)
-{
-#if SOC_DAC_SUPPORTED
-    (void)ledc_stop(AUDIO_DAC_TONE_MODE, AUDIO_DAC_TONE_CHANNEL, 0);
-    if (audio_dac_is_pin(SOLAR_OS_BOARD_PIN_AUDIO_DAC_POS)) {
-        gpio_set_level(SOLAR_OS_BOARD_PIN_AUDIO_DAC_POS, 0);
-    }
-#endif
 }
 
 static void audio_dac_board_close(bool write_silence)
@@ -258,8 +237,6 @@ esp_err_t audio_dac_board_init(void)
 #if !SOC_DAC_SUPPORTED
     return ESP_ERR_NOT_SUPPORTED;
 #else
-    audio_dac_stop_tone();
-
     if (audio_dac.initialized) {
         return ESP_OK;
     }
@@ -341,65 +318,6 @@ esp_err_t audio_dac_board_set_mic_gain(float gain_db)
 {
     (void)gain_db;
     return ESP_ERR_NOT_SUPPORTED;
-}
-
-esp_err_t audio_dac_board_play_tone(uint32_t frequency_hz, uint32_t duration_ms, uint8_t volume)
-{
-#if !SOC_DAC_SUPPORTED
-    (void)frequency_hz;
-    (void)duration_ms;
-    (void)volume;
-    return ESP_ERR_NOT_SUPPORTED;
-#else
-    if (!audio_dac_is_pin(SOLAR_OS_BOARD_PIN_AUDIO_DAC_POS)) {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-    if (frequency_hz == 0 || duration_ms == 0 || volume > 100) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (volume == 0) {
-        audio_dac_delay_us((int64_t)duration_ms * 1000LL);
-        return ESP_OK;
-    }
-
-    audio_dac_board_close(false);
-    esp_err_t ret = audio_dac_init_amp();
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    ledc_timer_config_t timer_config = {
-        .speed_mode = AUDIO_DAC_TONE_MODE,
-        .duty_resolution = AUDIO_DAC_TONE_DUTY_RES,
-        .timer_num = AUDIO_DAC_TONE_TIMER,
-        .freq_hz = frequency_hz,
-        .clk_cfg = LEDC_AUTO_CLK,
-    };
-    ret = ledc_timer_config(&timer_config);
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    ledc_channel_config_t channel_config = {
-        .gpio_num = SOLAR_OS_BOARD_PIN_AUDIO_DAC_POS,
-        .speed_mode = AUDIO_DAC_TONE_MODE,
-        .channel = AUDIO_DAC_TONE_CHANNEL,
-        .intr_type = LEDC_INTR_DISABLE,
-        .timer_sel = AUDIO_DAC_TONE_TIMER,
-        .duty = AUDIO_DAC_TONE_DUTY_HALF,
-        .hpoint = 0,
-        .sleep_mode = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD,
-    };
-    ret = ledc_channel_config(&channel_config);
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    audio_dac_set_amp_enabled(true);
-    audio_dac_delay_us((int64_t)duration_ms * 1000LL);
-    audio_dac_stop_tone();
-    return ESP_OK;
-#endif
 }
 
 esp_err_t audio_dac_board_write(const void *data, size_t len)
