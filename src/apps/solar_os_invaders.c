@@ -108,12 +108,6 @@ static void invaders_sound_task(void *arg)
     (void)arg;
     invaders_audio.task_done = false;
 
-    const esp_err_t init_err = solar_os_audio_init();
-    if (init_err != ESP_OK) {
-        invaders_audio.disabled = true;
-        SOLAR_OS_LOGW(TAG, "sound disabled: %s", esp_err_to_name(init_err));
-    }
-
     while (!invaders_audio.stop_requested) {
         invaders_sound_t sound;
         if (xQueueReceive(invaders_audio.queue, &sound, pdMS_TO_TICKS(100)) != pdTRUE) {
@@ -127,26 +121,35 @@ static void invaders_sound_task(void *arg)
         }
 
         const uint8_t volume = invaders_sound_volume();
+        esp_err_t err = ESP_OK;
         switch (sound) {
         case INVADERS_SOUND_FIRE:
-            (void)solar_os_audio_play_tone(1400, 28, volume);
+            err = solar_os_audio_play_tone(1400, 28, volume);
             break;
         case INVADERS_SOUND_HIT:
-            (void)solar_os_audio_play_tone(420, 45, volume);
+            err = solar_os_audio_play_tone(420, 45, volume);
             break;
         case INVADERS_SOUND_PLAYER_HIT:
-            (void)solar_os_audio_play_tone(180, 80, volume);
+            err = solar_os_audio_play_tone(180, 80, volume);
             break;
         case INVADERS_SOUND_WIN:
-            (void)solar_os_audio_play_tone(880, 55, volume);
-            (void)solar_os_audio_play_tone(1320, 70, volume);
+            err = solar_os_audio_play_tone(880, 55, volume);
+            if (err == ESP_OK) {
+                err = solar_os_audio_play_tone(1320, 70, volume);
+            }
             break;
         case INVADERS_SOUND_GAME_OVER:
-            (void)solar_os_audio_play_tone(220, 80, volume);
-            (void)solar_os_audio_play_tone(120, 110, volume);
+            err = solar_os_audio_play_tone(220, 80, volume);
+            if (err == ESP_OK) {
+                err = solar_os_audio_play_tone(120, 110, volume);
+            }
             break;
         default:
             break;
+        }
+        if (err != ESP_OK) {
+            invaders_audio.disabled = true;
+            SOLAR_OS_LOGW(TAG, "sound disabled: %s", esp_err_to_name(err));
         }
     }
 

@@ -522,15 +522,17 @@ static void clock_alarm_sound_task(void *arg)
     (void)arg;
 
     clock_state.alarm_sound_running = true;
-    const esp_err_t init_err = solar_os_audio_init();
-    if (init_err != ESP_OK) {
-        SOLAR_OS_LOGW(TAG, "alarm sound unavailable: %s", esp_err_to_name(init_err));
-    }
+    bool sound_available = true;
 
     while (!clock_state.alarm_sound_stop_requested) {
-        if (init_err == ESP_OK) {
+        if (sound_available) {
             for (int i = 0; i < 4 && !clock_state.alarm_sound_stop_requested; i++) {
-                (void)solar_os_audio_play_tone(1200, 70, clock_sound_volume());
+                const esp_err_t err = solar_os_audio_play_tone(1200, 70, clock_sound_volume());
+                if (err != ESP_OK) {
+                    sound_available = false;
+                    SOLAR_OS_LOGW(TAG, "alarm sound unavailable: %s", esp_err_to_name(err));
+                    break;
+                }
                 vTaskDelay(pdMS_TO_TICKS(45));
             }
         }

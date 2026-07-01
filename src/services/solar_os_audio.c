@@ -31,11 +31,7 @@
 #define AUDIO_MP3_INPUT_BUFFER_BYTES 16384U
 #define AUDIO_MP3_PROBE_SCAN_BYTES 65536U
 #define AUDIO_MP3_OUTPUT_MIN_SAMPLE_RATE 8000U
-#define AUDIO_MP3_OUTPUT_FRAMES_MAX \
-    (((MINIMP3_MAX_SAMPLES_PER_FRAME * SOLAR_OS_BOARD_AUDIO_DEFAULT_SAMPLE_RATE) / \
-      AUDIO_MP3_OUTPUT_MIN_SAMPLE_RATE) + 8U)
-#define AUDIO_MP3_OUTPUT_SAMPLES_MAX \
-    (AUDIO_MP3_OUTPUT_FRAMES_MAX * SOLAR_OS_BOARD_AUDIO_DEFAULT_CHANNELS)
+#define AUDIO_MP3_OUTPUT_SAMPLES_MAX (AUDIO_WAV_BUFFER_BYTES / sizeof(int16_t))
 #endif
 
 static const char *TAG = "solar_os_audio";
@@ -276,6 +272,18 @@ static void *audio_heap_alloc(size_t size)
     return ptr;
 }
 
+static void audio_log_heap_nomem(const char *where, size_t bytes)
+{
+    SOLAR_OS_LOGW(TAG,
+                  "%s alloc %u failed: internal free=%u largest=%u psram free=%u largest=%u",
+                  where != NULL ? where : "audio",
+                  (unsigned)bytes,
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT),
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+}
+
 static uint32_t audio_mp3_synchsafe_u32(const uint8_t data[4])
 {
     return ((uint32_t)(data[0] & 0x7fU) << 21) |
@@ -397,10 +405,14 @@ static size_t audio_mp3_convert_to_native(const int16_t *input,
                                           int sample_rate,
                                           audio_mp3_resampler_t *resampler,
                                           int16_t *output,
-                                          size_t output_samples_cap)
+                                          size_t output_samples_cap,
+                                          bool *source_done)
 {
     if (input == NULL || frames <= 0 || output == NULL || resampler == NULL ||
         channels <= 0 || channels > 2 || sample_rate <= 0) {
+        if (source_done != NULL) {
+            *source_done = false;
+        }
         return 0;
     }
 
@@ -442,7 +454,11 @@ static size_t audio_mp3_convert_to_native(const int16_t *input,
         phase += step;
     }
 
-    resampler->phase_q16 = phase >= limit ? phase - limit : phase;
+    const bool done = phase >= limit;
+    resampler->phase_q16 = done ? phase - limit : phase;
+    if (source_done != NULL) {
+        *source_done = done;
+    }
     return out_samples;
 }
 
@@ -592,10 +608,7 @@ esp_err_t solar_os_audio_measure_level(uint32_t duration_ms, solar_os_audio_leve
 #if !SOLAR_OS_BOARD_HAS_AUDIO
     return ESP_ERR_NOT_SUPPORTED;
 #else
-    esp_err_t ret = solar_os_audio_init();
-    if (ret != ESP_OK) {
-        return ret;
-    }
+    esp_err_t ret = ESP_OK;
 
     int16_t samples[AUDIO_LEVEL_BUFFER_SAMPLES];
     const int64_t deadline_us = esp_timer_get_time() + ((int64_t)duration_ms * 1000);
@@ -649,10 +662,7 @@ esp_err_t solar_os_audio_measure_channel_level(uint8_t channel,
 #if !SOLAR_OS_BOARD_HAS_AUDIO
     return ESP_ERR_NOT_SUPPORTED;
 #else
-    esp_err_t ret = solar_os_audio_init();
-    if (ret != ESP_OK) {
-        return ret;
-    }
+    esp_err_t ret = ESP_OK;
 
     int16_t samples[AUDIO_LEVEL_BUFFER_SAMPLES];
     const int64_t deadline_us = esp_timer_get_time() + ((int64_t)duration_ms * 1000);
@@ -794,10 +804,7 @@ esp_err_t solar_os_audio_record_wav(const char *path,
         return ESP_ERR_INVALID_STATE;
     }
 
-    esp_err_t ret = solar_os_audio_init();
-    if (ret != ESP_OK) {
-        return ret;
-    }
+    esp_err_t ret = ESP_OK;
 
     solar_os_audio_wav_info_t current;
     audio_wav_fill_native_info(&current, 0);
@@ -1044,11 +1051,35 @@ esp_err_t solar_os_audio_play_mp3(const char *path,
         return ESP_FAIL;
     }
 
+    esp_err_t ret = audio_mp3_seek_payload(file);
+    if (ret != ESP_OK) {
+        fclose(file);
+        return ret;
+    }
+
+    ret = solar_os_audio_set_volume(volume);
+    if (ret != ESP_OK) {
+        fclose(file);
+        return ret;
+    }
+
     mp3dec_t *decoder = audio_heap_alloc(sizeof(*decoder));
     uint8_t *input = audio_heap_alloc(AUDIO_MP3_INPUT_BUFFER_BYTES);
     int16_t *decoded = audio_heap_alloc(sizeof(*decoded) * MINIMP3_MAX_SAMPLES_PER_FRAME);
-    int16_t *output = audio_heap_alloc(sizeof(*output) * AUDIO_MP3_OUTPUT_SAMPLES_MAX);
+    int16_t *output = audio_heap_alloc(AUDIO_WAV_BUFFER_BYTES);
     if (decoder == NULL || input == NULL || decoded == NULL || output == NULL) {
+        if (decoder == NULL) {
+            audio_log_heap_nomem("mp3 decoder", sizeof(*decoder));
+        }
+        if (input == NULL) {
+            audio_log_heap_nomem("mp3 input", AUDIO_MP3_INPUT_BUFFER_BYTES);
+        }
+        if (decoded == NULL) {
+            audio_log_heap_nomem("mp3 decoded", sizeof(*decoded) * MINIMP3_MAX_SAMPLES_PER_FRAME);
+        }
+        if (output == NULL) {
+            audio_log_heap_nomem("mp3 output", AUDIO_WAV_BUFFER_BYTES);
+        }
         fclose(file);
         heap_caps_free(decoder);
         heap_caps_free(input);
@@ -1060,16 +1091,6 @@ esp_err_t solar_os_audio_play_mp3(const char *path,
     bool cancelled = false;
     solar_os_audio_wav_info_t progress;
     audio_mp3_fill_native_info(&progress, 0);
-    esp_err_t ret = audio_mp3_seek_payload(file);
-    if (ret != ESP_OK) {
-        goto cleanup;
-    }
-
-    ret = solar_os_audio_set_volume(volume);
-    if (ret != ESP_OK) {
-        goto cleanup;
-    }
-
     mp3dec_init(decoder);
     size_t input_len = 0;
     bool eof = false;
@@ -1108,29 +1129,44 @@ esp_err_t solar_os_audio_play_mp3(const char *path,
                 break;
             }
 
-            const size_t out_samples = audio_mp3_convert_to_native(decoded,
-                                                                   samples,
-                                                                   frame.channels,
-                                                                   frame.hz,
-                                                                   &resampler,
-                                                                   output,
-                                                                   AUDIO_MP3_OUTPUT_SAMPLES_MAX);
-            if (out_samples == 0 || (out_samples % SOLAR_OS_BOARD_AUDIO_DEFAULT_CHANNELS) != 0) {
-                ret = ESP_ERR_INVALID_RESPONSE;
-                break;
-            }
+            decoded_any = true;
+            bool source_done = false;
+            do {
+                if (audio_wav_should_cancel(options)) {
+                    cancelled = true;
+                    ret = ESP_ERR_TIMEOUT;
+                    break;
+                }
 
-            const size_t out_bytes = out_samples * sizeof(output[0]);
-            ret = solar_os_board_audio_write(output, out_bytes);
+                const size_t out_samples = audio_mp3_convert_to_native(decoded,
+                                                                       samples,
+                                                                       frame.channels,
+                                                                       frame.hz,
+                                                                       &resampler,
+                                                                       output,
+                                                                       AUDIO_MP3_OUTPUT_SAMPLES_MAX,
+                                                                       &source_done);
+                if (out_samples == 0 ||
+                    (out_samples % SOLAR_OS_BOARD_AUDIO_DEFAULT_CHANNELS) != 0) {
+                    ret = ESP_ERR_INVALID_RESPONSE;
+                    break;
+                }
+
+                const size_t out_bytes = out_samples * sizeof(output[0]);
+                ret = solar_os_board_audio_write(output, out_bytes);
+                if (ret != ESP_OK) {
+                    break;
+                }
+
+                progress.data_bytes += (uint32_t)out_bytes;
+                progress.duration_ms =
+                    (uint32_t)((((uint64_t)progress.data_bytes / progress.block_align) * 1000U) /
+                               progress.sample_rate);
+            } while (!source_done);
+
             if (ret != ESP_OK) {
                 break;
             }
-
-            decoded_any = true;
-            progress.data_bytes += (uint32_t)out_bytes;
-            progress.duration_ms =
-                (uint32_t)((((uint64_t)progress.data_bytes / progress.block_align) * 1000U) /
-                           progress.sample_rate);
 
             const int64_t now_us = esp_timer_get_time();
             if (now_us >= next_progress_us) {
