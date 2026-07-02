@@ -33,6 +33,7 @@
 #endif
 #include "solar_os_cdc.h"
 #include "solar_os_display.h"
+#include "solar_os_expansion.h"
 #include "solar_os_gpio.h"
 #include "solar_os_gfx_internal.h"
 #include "solar_os_fonts.h"
@@ -49,6 +50,8 @@
 #include "solar_os_port_shell.h"
 #include "solar_os_power.h"
 #include "solar_os_pwm.h"
+#include "solar_os_radio.h"
+#include "solar_os_resources.h"
 #include "solar_os_sensors.h"
 #include "solar_os_sessions.h"
 #include "solar_os_shell.h"
@@ -953,6 +956,13 @@ static void init_peripherals(void)
         }
     }
 
+#if SOLAR_OS_PACKAGE_SERVICE_RESOURCES
+    const esp_err_t resources_err = solar_os_resources_init();
+    if (resources_err != ESP_OK) {
+        SOLAR_OS_LOGW(TAG, "Resource claims unavailable: %s", esp_err_to_name(resources_err));
+    }
+#endif
+
 #if SOLAR_OS_PACKAGE_SERVICE_BATTERY
     if (board_has(SOLAR_OS_BOARD_CAP_BATTERY)) {
         const esp_err_t battery_err = solar_os_battery_init();
@@ -1092,6 +1102,22 @@ static void init_peripherals(void)
         if (spi_err != ESP_OK) {
             SOLAR_OS_LOGW(TAG, "SPI unavailable: %s", esp_err_to_name(spi_err));
         }
+    }
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_EXPANSION
+    if (solar_os_expansion_available()) {
+        const esp_err_t expansion_err = solar_os_expansion_init();
+        if (expansion_err != ESP_OK) {
+            SOLAR_OS_LOGW(TAG, "Expansion service unavailable: %s", esp_err_to_name(expansion_err));
+        }
+    }
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_RADIO
+    const esp_err_t radio_err = solar_os_radio_init();
+    if (radio_err != ESP_OK) {
+        SOLAR_OS_LOGW(TAG, "Radio service unavailable: %s", esp_err_to_name(radio_err));
     }
 #endif
 

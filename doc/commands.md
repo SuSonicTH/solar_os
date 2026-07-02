@@ -346,6 +346,19 @@ and writes the inactive ESP-IDF OTA partition.
 | `audio` | `audio mic [ms]` | Sample microphone level. |
 | `audio` | `audio loopback [ms] [volume]` | Run microphone-to-speaker loopback. |
 | `audio` | `audio off` | Stop audio output. |
+| `expansion` | `expansion [status]` | Show expansion capabilities, connector resources, active devices, and resource claims. |
+| `expansion` | `expansion scan` | List expansion resources and probe-capable drivers. |
+| `expansion` | `expansion drivers` | List compiled expansion drivers. |
+| `expansion` | `expansion devices` | List manually attached expansion devices. |
+| `expansion` | `expansion attach <driver> <name> <resource...>` | Attach a compiled expansion driver or manual resource profile. |
+| `expansion` | `expansion detach <name>` | Detach an active expansion device and release its resource claims. |
+| `radio` | `radio` | Open the packet-radio TUI with live status and editable common config. |
+| `radio` | `radio status|list` | List packet radios registered by expansion drivers. |
+| `radio` | `radio status <name>` | Show one packet radio, its capabilities, state, and current config. |
+| `radio` | `radio config <name> [field value]` | Show or update common packet-radio configuration. |
+| `radio` | `radio state <name> [sleep|standby|rx|tx]` | Show or change radio operating state. |
+| `radio` | `radio send <name> <text|byte...>` | Send one packet. |
+| `radio` | `radio recv <name> [timeout-ms]` | Receive one packet and print metadata plus payload. |
 | `uart` | `uart status` | Show UART service state. |
 | `uart` | `uart baud [rate]` | Show or set UART baud rate. |
 | `uart` | `uart mode [raw|line]` | Show or set UART service mode. |
@@ -390,6 +403,37 @@ GPIO25/GPIO26 are speaker amplifier/DAC pins, GPIO18/GPIO19/GPIO23 are VSPI,
 GPIO5/GPIO21 are TFT control pins, GPIO22 is SD card chip select, GPIO34/GPIO35
 are ADC D-pad axes, GPIO36 is battery ADC, GPIO39 is the board key input, and
 GPIO32/GPIO33/GPIO13/GPIO27/GPIO0 are built-in buttons.
+
+Manual expansion profiles claim resources without initializing external
+hardware:
+
+```text
+expansion attach manual radio0 spi0 cs=gpio10 irq=gpio4 reset=gpio5
+expansion attach manual sensor0 i2c0 addr=0x40
+expansion detach radio0
+```
+
+RFM69 433 MHz packet radios can be attached as active expansion devices. Only
+`spi` and `cs` are required; `irq` and `reset` are optional:
+
+```text
+expansion attach rfm69 radio0 spi=spi0 cs=gpio10
+expansion attach rfm69 radio0 spi=spi0 cs=gpio10 irq=gpio4 reset=gpio5
+expansion detach radio0
+```
+
+Packet radio devices are datagram endpoints registered by expansion drivers, not
+byte-stream ports. The common radio layer preserves packet metadata such as RSSI
+and optional source/destination IDs. Radio frequency values are Hz by default
+and also accept `k`, `kHz`, `M`, and `MHz` suffixes:
+
+```text
+radio status radio0
+radio config radio0 frequency 433MHz
+radio config radio0 modulation gfsk
+radio send radio0 hello
+radio recv radio0 5000
+```
 
 ## Quick Examples
 
