@@ -11,6 +11,7 @@
 
 esp_err_t solar_os_port_shell_start(solar_os_context_t *ctx,
                                     const char *port_name,
+                                    bool run_startup,
                                     uint8_t *session_id);
 esp_err_t solar_os_port_shell_stop(uint8_t session_id);
 bool solar_os_port_shell_is_session_id(uint8_t session_id);

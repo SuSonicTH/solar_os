@@ -3712,7 +3712,7 @@ static void cmd_session(solar_os_context_t *ctx, int argc, char **argv)
         }
 
         uint8_t session_id = 0;
-        const esp_err_t err = solar_os_port_shell_start(ctx, argv[3], &session_id);
+        const esp_err_t err = solar_os_port_shell_start(ctx, argv[3], false, &session_id);
         if (err == ESP_OK) {
             solar_os_shell_io_printf(io,
                                      "session %u created: shell on %s\n",

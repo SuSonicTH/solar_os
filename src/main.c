@@ -1178,7 +1178,7 @@ static void start_headless_shell_if_needed(void)
 
         uint8_t session_id = 0;
         const esp_err_t err =
-            solar_os_port_shell_start(&os_ctx, fallback_ports[i].port_name, &session_id);
+            solar_os_port_shell_start(&os_ctx, fallback_ports[i].port_name, true, &session_id);
         if (err == ESP_OK) {
             SOLAR_OS_LOGI(TAG,
                           "Headless shell session %u started on %s",

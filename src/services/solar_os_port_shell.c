@@ -43,6 +43,7 @@ typedef struct {
     solar_os_shell_session_t *session;
     solar_os_context_t ctx;
     solar_os_vt100_input_t input;
+    bool run_startup;
     char port_name[SOLAR_OS_PORT_NAME_MAX];
     esp_err_t last_error;
 } port_shell_state_t;
@@ -353,6 +354,7 @@ static void port_shell_cleanup(port_shell_state_t *state)
 
     state->running = false;
     state->stop_requested = false;
+    state->run_startup = false;
     state->task = NULL;
     state->port_name[0] = '\0';
     state->used = false;
@@ -372,7 +374,7 @@ static void port_shell_task(void *arg)
                                                  state->session,
                                                  solar_os_shell_session_io(state->session),
                                                  false,
-                                                 false);
+                                                 state->run_startup);
     if (err != ESP_OK) {
         state->last_error = err;
         SOLAR_OS_LOGW(TAG, "session start failed on %s: %s", state->port_name, esp_err_to_name(err));
@@ -481,6 +483,7 @@ bool solar_os_port_shell_is_session_id(uint8_t session_id)
 
 esp_err_t solar_os_port_shell_start(solar_os_context_t *ctx,
                                     const char *port_name,
+                                    bool run_startup,
                                     uint8_t *session_id)
 {
     solar_os_port_handle_t port = SOLAR_OS_PORT_HANDLE_INIT;
@@ -527,6 +530,7 @@ esp_err_t solar_os_port_shell_start(solar_os_context_t *ctx,
     state->port = port;
     state->session = session;
     state->stop_requested = false;
+    state->run_startup = run_startup;
     state->running = true;
     state->last_error = ESP_OK;
     strlcpy(state->port_name, port_name, sizeof(state->port_name));
