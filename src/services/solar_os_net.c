@@ -58,14 +58,10 @@ static esp_err_t net_lookup_hosts_file(const char *host, char *resolved_host, si
         return ESP_ERR_NOT_FOUND;
     }
 
+    char dir[SOLAR_OS_STORAGE_PATH_MAX];
     char hosts_path[SOLAR_OS_STORAGE_PATH_MAX];
-    const int written = snprintf(hosts_path,
-                                 sizeof(hosts_path),
-                                 "%s/%s/%s",
-                                 solar_os_storage_mount_point(),
-                                 SOLAR_OS_NET_SSH_DIR,
-                                 SOLAR_OS_NET_HOSTS);
-    if (written < 0 || (size_t)written >= sizeof(hosts_path)) {
+    if (solar_os_storage_default_path(SOLAR_OS_NET_SSH_DIR, dir, sizeof(dir)) != ESP_OK ||
+        solar_os_storage_join_path(dir, SOLAR_OS_NET_HOSTS, hosts_path, sizeof(hosts_path)) != ESP_OK) {
         return ESP_ERR_INVALID_SIZE;
     }
 

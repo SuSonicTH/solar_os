@@ -472,6 +472,67 @@ static void storage_pop_path_segment(char *out, size_t root_len)
     *slash = '\0';
 }
 
+esp_err_t solar_os_storage_join_path(const char *base_path,
+                                     const char *relative_path,
+                                     char *path,
+                                     size_t path_len)
+{
+    if (base_path == NULL || base_path[0] != '/' || path == NULL || path_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    size_t base_len = strlen(base_path);
+    while (base_len > 1 && base_path[base_len - 1] == '/') {
+        base_len--;
+    }
+    if (base_len >= path_len) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(path, base_path, base_len);
+    path[base_len] = '\0';
+    const size_t root_len = base_len;
+
+    const char *cursor = relative_path;
+    if (cursor == NULL) {
+        return ESP_OK;
+    }
+
+    while (*cursor != '\0') {
+        while (*cursor == '/') {
+            cursor++;
+        }
+        const char *segment = cursor;
+        while (*cursor != '\0' && *cursor != '/') {
+            cursor++;
+        }
+        const size_t segment_len = (size_t)(cursor - segment);
+
+        if (segment_len == 0 ||
+            (segment_len == 1 && segment[0] == '.')) {
+            continue;
+        }
+        if (segment_len == 2 && segment[0] == '.' && segment[1] == '.') {
+            storage_pop_path_segment(path, root_len);
+            continue;
+        }
+
+        esp_err_t ret = storage_append_path_segment(path, path_len, segment, segment_len);
+        if (ret != ESP_OK) {
+            return ret;
+        }
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t solar_os_storage_default_path(const char *relative_path, char *path, size_t path_len)
+{
+    return solar_os_storage_join_path(solar_os_storage_mount_point(),
+                                      relative_path,
+                                      path,
+                                      path_len);
+}
+
 esp_err_t solar_os_storage_normalize_path(const char *path, char *out, size_t out_len)
 {
     if (path == NULL || path[0] == '\0' || out == NULL || out_len == 0) {
@@ -560,7 +621,9 @@ esp_err_t solar_os_storage_resolve_path_at(const char *cwd,
             }
         }
     } else {
-        written = snprintf(raw, sizeof(raw), "%s/%s", base, arg);
+        written = strcmp(base, "/") == 0 ?
+            snprintf(raw, sizeof(raw), "/%s", arg) :
+            snprintf(raw, sizeof(raw), "%s/%s", base, arg);
         if (written < 0 || (size_t)written >= sizeof(raw)) {
             return ESP_ERR_INVALID_SIZE;
         }

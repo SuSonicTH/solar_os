@@ -66,15 +66,7 @@ static esp_err_t ssh_keys_dir(char *path, size_t path_len)
         return ESP_ERR_INVALID_STATE;
     }
 
-    const int written = snprintf(path,
-                                 path_len,
-                                 "%s/%s",
-                                 solar_os_storage_mount_point(),
-                                 SSH_KEYS_DIR);
-    if (written < 0 || (size_t)written >= path_len) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-    return ESP_OK;
+    return solar_os_storage_default_path(SSH_KEYS_DIR, path, path_len);
 }
 
 static esp_err_t ensure_ssh_keys_dir(void)

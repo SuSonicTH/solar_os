@@ -943,7 +943,7 @@ static esp_err_t edit_start(solar_os_context_t *ctx)
 
     if (!solar_os_storage_is_mounted()) {
         editor.error_only = true;
-        editor_set_message("SD card not mounted");
+        editor_set_message("storage not mounted");
         editor_render(ctx);
         return ESP_OK;
     }

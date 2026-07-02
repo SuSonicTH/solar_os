@@ -53,13 +53,9 @@ static bool transport_make_storage_path(char *path, size_t path_len, const char 
         return false;
     }
 
-    const int written = snprintf(path,
-                                 path_len,
-                                 "%s/%s/%s",
-                                 solar_os_storage_mount_point(),
-                                 SOLAR_OS_SSH_TRANSPORT_DIR,
-                                 name);
-    return written >= 0 && (size_t)written < path_len;
+    char dir[SOLAR_OS_STORAGE_PATH_MAX];
+    return solar_os_storage_default_path(SOLAR_OS_SSH_TRANSPORT_DIR, dir, sizeof(dir)) == ESP_OK &&
+        solar_os_storage_join_path(dir, name, path, path_len) == ESP_OK;
 }
 
 static esp_err_t transport_ensure_config_dir(const solar_os_ssh_transport_config_t *config,
@@ -67,16 +63,13 @@ static esp_err_t transport_ensure_config_dir(const solar_os_ssh_transport_config
                                              size_t dir_path_len)
 {
     if (!solar_os_storage_is_mounted()) {
-        transport_send_error(config, "SD card required for SSH config");
+        transport_send_error(config, "storage required for SSH config");
         return ESP_ERR_INVALID_STATE;
     }
 
-    const int written = snprintf(dir_path,
-                                 dir_path_len,
-                                 "%s/%s",
-                                 solar_os_storage_mount_point(),
-                                 SOLAR_OS_SSH_TRANSPORT_DIR);
-    if (written < 0 || (size_t)written >= dir_path_len) {
+    if (solar_os_storage_default_path(SOLAR_OS_SSH_TRANSPORT_DIR,
+                                      dir_path,
+                                      dir_path_len) != ESP_OK) {
         transport_send_error(config, "SSH config path too long");
         return ESP_ERR_INVALID_SIZE;
     }
@@ -364,10 +357,10 @@ static esp_err_t transport_verify_host_key(const solar_os_ssh_transport_config_t
 
     if (!solar_os_storage_is_mounted() &&
         config->allow_unverified_host_key_without_storage) {
-        transport_send_status(config, "host key not verified: no SD");
+        transport_send_status(config, "host key not verified: no storage");
         if (config->log_tag != NULL) {
             SOLAR_OS_LOGW(config->log_tag,
-                          "host key not verified for %s:%" PRIu16 ": no SD storage",
+                          "host key not verified for %s:%" PRIu16 ": no storage",
                           config->host,
                           config->port);
         }

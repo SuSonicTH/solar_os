@@ -340,7 +340,7 @@ static esp_err_t audio_app_start_common(solar_os_context_t *ctx, audio_app_mode_
     solar_os_terminal_printf(term, "file: %s\n", audio_app.path);
 
     if (!solar_os_storage_is_mounted()) {
-        solar_os_terminal_writeln(term, "SD card not mounted");
+        solar_os_terminal_writeln(term, "storage not mounted");
         solar_os_terminal_writeln(term, "CTRL+ALT+DEL exits");
         return ESP_OK;
     }

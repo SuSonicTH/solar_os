@@ -1909,7 +1909,7 @@ static void sshkey_print_status(solar_os_shell_io_t *term)
     solar_os_ssh_key_status_t status;
     const esp_err_t err = solar_os_ssh_keys_get_status(&status);
     if (err == ESP_ERR_INVALID_STATE) {
-        solar_os_shell_io_writeln(term, "sshkey: SD card is not mounted");
+        solar_os_shell_io_writeln(term, "sshkey: storage is not mounted");
         return;
     }
     if (err != ESP_OK) {
@@ -1937,7 +1937,7 @@ static void sshkey_print_public(solar_os_shell_io_t *term)
     solar_os_ssh_key_status_t status;
     esp_err_t err = solar_os_ssh_keys_get_status(&status);
     if (err == ESP_ERR_INVALID_STATE) {
-        solar_os_shell_io_writeln(term, "sshkey: SD card is not mounted");
+        solar_os_shell_io_writeln(term, "sshkey: storage is not mounted");
         return;
     }
     if (err != ESP_OK) {
@@ -2000,7 +2000,7 @@ void solar_os_shell_cmd_sshkey(solar_os_context_t *ctx, int argc, char **argv)
         } else if (err == ESP_ERR_NOT_FOUND) {
             solar_os_shell_io_writeln(term, "sshkey: no key to remove");
         } else if (err == ESP_ERR_INVALID_STATE) {
-            solar_os_shell_io_writeln(term, "sshkey: SD card is not mounted");
+            solar_os_shell_io_writeln(term, "sshkey: storage is not mounted");
         } else {
             solar_os_shell_io_printf(term, "sshkey: remove failed: %s\n", esp_err_to_name(err));
         }
@@ -2012,7 +2012,7 @@ void solar_os_shell_cmd_sshkey(solar_os_context_t *ctx, int argc, char **argv)
         size_t bits = SOLAR_OS_SSH_KEY_DEFAULT_BITS;
 
         if (!solar_os_storage_is_mounted()) {
-            solar_os_shell_io_writeln(term, "sshkey: SD card is not mounted");
+            solar_os_shell_io_writeln(term, "sshkey: storage is not mounted");
             return;
         }
 

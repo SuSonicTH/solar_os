@@ -81,11 +81,16 @@ static esp_err_t reader_state_path(char *path, size_t path_len, const char *leaf
         return ESP_ERR_INVALID_STATE;
     }
 
-    const char *mount = solar_os_storage_mount_point();
-    const int written = leaf == NULL ?
-        snprintf(path, path_len, "%s/%s", mount, READER_STATE_DIR) :
-        snprintf(path, path_len, "%s/%s/%s", mount, READER_STATE_DIR, leaf);
-    return written >= 0 && (size_t)written < path_len ? ESP_OK : ESP_ERR_INVALID_SIZE;
+    if (leaf == NULL || leaf[0] == '\0') {
+        return solar_os_storage_default_path(READER_STATE_DIR, path, path_len);
+    }
+
+    char dir[SOLAR_OS_STORAGE_PATH_MAX];
+    esp_err_t ret = solar_os_storage_default_path(READER_STATE_DIR, dir, sizeof(dir));
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    return solar_os_storage_join_path(dir, leaf, path, path_len);
 }
 
 static esp_err_t reader_ensure_state_dir(void)

@@ -1,8 +1,8 @@
 # SolarOS
 
-SolarOS is a small text-first pocket terminal OS mainly for the Waveshare ESP32-S3-RLCD-4.2. It targets the reflective 400 x 300 display, BLE keyboard input, Wi-Fi, SD storage, SSH, serial I/O, and the onboard low-power peripherals.
+SolarOS is a small text-first pocket terminal OS mainly for the Waveshare ESP32-S3-RLCD-4.2. It targets the reflective 400 x 300 display, BLE keyboard input, Wi-Fi, storage, SSH, serial I/O, and the onboard low-power peripherals.
 
-The current firmware is still a single ESP-IDF image. Applications are built into the firmware and launched from the SolarOS shell, while persistent data, configuration, SSH keys, known hosts, shell history, and user files live on the SD card.
+The current firmware is still a single ESP-IDF image. Applications are built into the firmware and launched from the SolarOS shell, while persistent data, configuration, SSH keys, known hosts, shell history, and user files live on the default storage volume.
 
 ## Supported Boards
 
@@ -135,7 +135,7 @@ apps and jobs are not compiled into the image.
 
 Current package groups:
 
-- `core`: Always enabled. Board hardware services, display/terminal, shell, SD storage, ports, logs, jobs framework, crypto helpers, OTA, RTC/time, BLE keyboard, Wi-Fi control, battery, ADC, GPIO, PWM, I2C, UART, SHTC3 sensors, and the `audio` hardware command.
+- `core`: Always enabled. Board hardware services, display/terminal, shell, storage, ports, logs, jobs framework, crypto helpers, OTA, RTC/time, BLE keyboard, Wi-Fi control, battery, ADC, GPIO, PWM, I2C, UART, SHTC3 sensors, and the `audio` hardware command.
 - `audio`: `arecord`, `aplay`, and MP3 decoding.
 - `net`: Network tools/apps/jobs such as `ping`, `netscan`, `mqtt`, `ssh`, `scp`, `curl`, `web`, `chat`, `httpd`, `slip`, and `sshkey`.
 - `media`: Image viewer and image decoder apps.
@@ -174,7 +174,7 @@ SolarOS boots into a shell prompt:
 user@sol:/
 ```
 
-If SD identity files are present, `/.shell/user` and `/.shell/hostname` override the default `user@sol` identity. The prompt tracks the current SD directory.
+If storage identity files are present, `/.shell/user` and `/.shell/hostname` override the default `user@sol` identity. The prompt tracks the current storage directory.
 
 Useful shell behavior:
 
@@ -187,8 +187,8 @@ Useful shell behavior:
 - Up/Down browse command history.
 - Left/Right edit the current command line.
 - Page Up/Down scroll terminal history.
-- Shell history is cached at `/.shell/history` when SD storage is available.
-- `sh <file>` runs a simple SolarOS shell script from SD.
+- Shell history is cached at `/.shell/history` when storage is available.
+- `sh <file>` runs a simple SolarOS shell script from storage.
 - `/.shell/startup` is run once when the shell first starts, if present.
 - `/.shell/alias` defines simple command aliases, one per line.
 
@@ -276,7 +276,7 @@ Storage and files:
 
 Shell scripts are intentionally minimal. `sh <file>` reads the file line by line, skips blank lines and lines whose first non-space character is `#`, and runs each remaining line through the normal SolarOS shell command path. There are no variables, pipes, redirects, or quoting rules yet.
 
-Shell aliases are defined in `/.shell/alias`. Each non-empty, non-comment line is `<alias> <command-or-app> [fixed args...]`; extra arguments typed after the alias are appended. For example, `delete rm *` makes `delete` run `rm *`. Aliases are re-read from SD when commands are executed or completed.
+Shell aliases are defined in `/.shell/alias`. Each non-empty, non-comment line is `<alias> <command-or-app> [fixed args...]`; extra arguments typed after the alias are appended. For example, `delete rm *` makes `delete` run `rm *`. Aliases are re-read from storage when commands are executed or completed.
 
 `watch` repeats a shell command or alias until `CTRL+ALT+DEL`, `ESC`, or `q` is pressed. For example, `watch -n 1 battery` refreshes the battery status once per second.
 
@@ -409,7 +409,7 @@ Jobs run in the background while a foreground app or shell remains active.
 - `batmon`: Periodically sample battery voltage and estimate trend/time left. Start with `job start batmon [interval-sec]`; default is `60`. SolarOS smooths ADC readings and uses a rolling trend as the main power-state signal: discharging means battery, charging means external power. Voltage above `battery max_voltage` is a fast external-power shortcut. If three consecutive samples are at or below `battery min_voltage` while on battery, SolarOS requests light sleep.
 - `bridge`: Raw bidirectional byte bridge between two ports. Start with `job start bridge <port-a> <port-b>`, for example `job start bridge cdc0 uart0`.
 - `daq`: Capture one or more data streams to a timestamped CSV file, or one byte stream to a raw file. Start with `job start daq <stream...> <file.csv> [--rate seconds|--rate-ms ms] [--append|--replace]` or `job start daq <file.csv> <stream...> [--rate seconds|--rate-ms ms]`; add `--raw` for direct single byte-stream capture.
-- `httpd`: Serve static files from a folder. Start with `job start httpd <folder>`; relative folders resolve under the default SD mount point.
+- `httpd`: Serve static files from a folder. Start with `job start httpd <folder>`; relative folders resolve under the default storage mount point.
 - `log`: Stream SolarOS log entries to a byte-stream port or SD file. Start with `job start log <port> [error|warn|info|debug]` or `job start log file <path> [error|warn|info|debug]`.
 - `ntp-sync`: Sync RTC time from NTP. Start with `job start ntp-sync [once] [interval-sec] [server]`; defaults are `60` and `pool.ntp.org`. With `once`, the job retries at the interval until the first successful sync, then stops itself.
 - `slip`: Start an IPv4 SLIP gateway on a byte-stream port. Start with `job start slip [port] [baud] [local-ip] [peer-ip] [netmask]`; defaults are `uart0`, `115200`, `192.168.7.1`, `192.168.7.2`, and `255.255.255.252`. The peer should use the local IP as its gateway. NAT is enabled on the SLIP-facing interface.
@@ -452,21 +452,21 @@ job start log uart0 debug
 job start log file /.shell/log info
 ```
 
-The file form resolves shell-style paths, so `/.shell/log` and `/sdcard/.shell/log` both target the default SD card mount. If a port is already owned by a shell, app, or another job, the log job will fail until that owner releases it.
+The file form resolves shell-style paths, so `/.shell/log` and `/sdcard/.shell/log` both target the default storage mount on SD-backed boards. If a port is already owned by a shell, app, or another job, the log job will fail until that owner releases it.
 
 ## Built-In Applications
 
 Applications are launched by typing their name at the shell prompt.
 
-- `arecord`: Record native 16000 Hz stereo 16-bit PCM WAV audio to SD card.
-- `aplay`: Play native 16000 Hz stereo 16-bit PCM WAV or MP3 audio from SD card.
+- `arecord`: Record native 16000 Hz stereo 16-bit PCM WAV audio to storage.
+- `aplay`: Play native 16000 Hz stereo 16-bit PCM WAV or MP3 audio from storage.
 - `clock`: Seven-segment clock, countdown alarm, and stopwatch. Use `clock` for time, `clock -a mm:ss` for a countdown alarm that beeps until quit, and `clock -s` for stopwatch mode.
-- `python`: Interactive MicroPython shell, plus `.py` and `.mpy` script execution from SD card, with a PSRAM heap and a small `solaros` module.
-- `lua`: Interactive Lua shell, plus `.lua` script execution from SD card, with PSRAM-first allocation and SolarOS service bindings.
+- `python`: Interactive MicroPython shell, plus `.py` and `.mpy` script execution from storage, with a PSRAM heap and a small `solaros` module.
+- `lua`: Interactive Lua shell, plus `.lua` script execution from storage, with PSRAM-first allocation and SolarOS service bindings.
 - `ssh`: SSH client with UTF-8 terminal rendering, host key checking, password/key auth, `/.ssh/known_hosts`, and `/.ssh/hosts` lookup.
 - `scp`: Copy files to or from a remote SSH server.
-- `curl`: HTTP/HTTPS GET client with redirect support and optional SD card output.
-- `edit`: Text editor for SD card files with navigation, selection, copy/cut/paste, and PSRAM buffer storage.
+- `curl`: HTTP/HTTPS GET client with redirect support and optional storage output.
+- `edit`: Text editor for storage files with navigation, selection, copy/cut/paste, and PSRAM buffer storage.
 - `less`: Text file pager with wrapping and search.
 - `reader`: Graphics Markdown/text reader using the shared retained document layout engine. Use `reader <file.md|file.txt>`; arrows scroll, page keys turn pages, and `+`/`-` adjusts zoom across 12/14/16/18/20 font sizes. `.txt` files use prose paragraph flow, while `.md`/`.markdown` files use Markdown parsing. Per-file position and zoom are saved in `/.reader/positions`.
 - `notes`: Markdown checklist notes stored as `- [ ]` / `- [x]` items. Use `notes` for `/.notes/default.md` or `notes /notes/todo.md`; `Shift+Up`/`Shift+Down` reorders the selected item inside its active/done section.
@@ -489,13 +489,13 @@ Application registry capabilities:
 
 The built-in app registry stores each app name, summary, implementation pointer, capability flags, and current owner. The owner guard prevents the same foreground app from being launched simultaneously by the display shell and a port shell. The `apps` command lists registered foreground apps; future SD-loaded apps should merge into this same registry model.
 
-`python` starts an interactive MicroPython prompt with `>>>` and `...` continuation prompts. `python <file.py|file.mpy> [args...]` runs a MicroPython script from SD. Script output is drawn in the SolarOS terminal, `sys.argv` contains the script path and following arguments, and `CTRL+ALT+DEL` exits at the prompt or requests `KeyboardInterrupt` while code is running.
+`python` starts an interactive MicroPython prompt with `>>>` and `...` continuation prompts. `python <file.py|file.mpy> [args...]` runs a MicroPython script from storage. Script output is drawn in the SolarOS terminal, `sys.argv` contains the script path and following arguments, and `CTRL+ALT+DEL` exits at the prompt or requests `KeyboardInterrupt` while code is running.
 
 The native `solaros` module exposes SolarOS services to MicroPython scripts. Top-level helpers include `write(text)`, `version()`, `should_exit()`, `battery_status()`, `wifi_status()`, and `environment()`. Service modules are grouped as `solaros.storage`, `solaros.time`, `solaros.battery`, `solaros.sensors`, `solaros.wifi`, `solaros.mqtt`, `solaros.gpio`, `solaros.adc`, `solaros.pwm`, `solaros.i2c`, `solaros.uart`, `solaros.audio`, `solaros.ble`, `solaros.clipboard`, `solaros.identity`, `solaros.net`, `solaros.ssh_keys`, `solaros.jobs`, `solaros.apps`, `solaros.tui`, and `solaros.gfx`.
 
 See [SolarOS Python API](doc/solar_os_python.md) for the full module reference and examples.
 
-`lua` starts an interactive Lua prompt. `lua <file.lua> [args...]` runs a Lua script from SD, with `arg[0]` set to the script path and following arguments stored from `arg[1]`. The embedded Lua library set includes base, coroutine, table, string, math, UTF-8, and debug. Host-facing Lua `io`, `os`, and dynamic package loading are intentionally not opened. SolarOS preloads a global `solaros` table and also supports `local solaros = require("solaros")` through a minimal built-in shim.
+`lua` starts an interactive Lua prompt. `lua <file.lua> [args...]` runs a Lua script from storage, with `arg[0]` set to the script path and following arguments stored from `arg[1]`. The embedded Lua library set includes base, coroutine, table, string, math, UTF-8, and debug. Host-facing Lua `io`, `os`, and dynamic package loading are intentionally not opened. SolarOS preloads a global `solaros` table and also supports `local solaros = require("solaros")` through a minimal built-in shim.
 
 The Lua `solaros` API mirrors the Python service layout for storage, time, hardware services, Wi-Fi, audio, BLE, jobs, app registry, TUI, and graphics. Network-specific Lua modules such as `mqtt`, `net`, and `ssh_keys` are present when the `net` package is compiled.
 
@@ -522,9 +522,9 @@ print(solaros.battery.status().percent)
 print(solaros.storage.usage("/")["free_bytes"])
 ```
 
-## SD Card Layout
+## Storage Layout
 
-The SD card is mounted at `/sdcard` internally and presented as `/` in shell paths.
+The default storage volume is presented as `/` in shell paths. On SD-backed boards, the primary SD card volume is also mounted internally at `/sdcard`.
 
 Current conventional files:
 
