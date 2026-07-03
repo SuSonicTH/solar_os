@@ -65,6 +65,7 @@ Arguments typed after the alias are appended.
 | `version` | `version` | Print SolarOS version, board, flavor, and package information. |
 | `pkg` | `pkg` | Print compiled package groups and build units. |
 | `board` | `board` | Print board ID, name, and capabilities. |
+| `display` | `display [list]` | List drawable display targets from board and expansion providers. |
 | `status` | `status` | Print a compact system status summary. |
 | `uptime` | `uptime` | Print elapsed time since boot. |
 | `mem` | `mem` | Print internal RAM, PSRAM, and DMA memory status. |
@@ -415,6 +416,11 @@ GPIO25/GPIO26 are speaker amplifier/DAC pins, GPIO18/GPIO19/GPIO23 are VSPI,
 GPIO5/GPIO21 are TFT control pins, GPIO22 is SD card chip select, GPIO34/GPIO35
 are ADC D-pad axes, GPIO36 is battery ADC, GPIO39 is the board key input, and
 GPIO32/GPIO33/GPIO13/GPIO27/GPIO0 are built-in buttons.
+
+Physical displays are listed by `display list`. A built-in board panel registers
+as a board display target such as `display0`; an expansion display driver stays
+in `expansion drivers` as attachable hardware and registers a display target
+after it is attached. The built-in board panel is not an expansion driver.
 
 Manual expansion profiles claim resources without initializing external
 hardware:

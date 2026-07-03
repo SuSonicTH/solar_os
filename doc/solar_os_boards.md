@@ -494,10 +494,16 @@ main.c
   -> solar_os_board_display_*
     -> board/solar_os_board_display_<driver>.c
       -> drivers/<concrete_display_driver>.c
+  -> solar_os_display target display0
 ```
 
 `main.c`, terminal, and graphics services should not include concrete display
 driver headers.
+
+The board panel is registered with the display service as a target with
+`source=board` and `role=primary`. Expansion display drivers should remain
+expansion drivers for attach/probe/resource management, then register their own
+display targets with `source=expansion` when attached.
 
 ## Storage, I2C, Sensors, RTC, And Audio
 

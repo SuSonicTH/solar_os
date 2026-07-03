@@ -147,6 +147,7 @@ static const shell_command_t shell_builtin_commands[] = {
     {"version", "show SolarOS version", solar_os_shell_cmd_version},
     {"pkg", "show compiled packages", solar_os_shell_cmd_pkg},
     {"board", "show board capabilities", solar_os_shell_cmd_board},
+    {"display", "list display targets", solar_os_shell_cmd_display},
     {"clear", "clear the screen", solar_os_shell_cmd_clear},
     {"sleep", "enter light sleep", solar_os_shell_cmd_sleep},
     {"power", "power profile and sleep policy", solar_os_shell_cmd_power},
@@ -270,6 +271,10 @@ static const char * const setterm_profile_values[] = {"vt100", "ansi", "dumb"};
 static const char * const setterm_keyboard_values[] = {"us", "de"};
 static const char * const setterm_keyrate_values[] = {"off"};
 static const char * const setterm_timezone_values[] = {"UTC", "Europe/Berlin"};
+
+static const char * const display_subcommands[] = {
+    "list",
+};
 
 static const char * const ble_subcommands[] = {
     "status",
@@ -648,6 +653,7 @@ static const char * const path_setterm_keyrate[] = {"setterm", "keyrate"};
 static const char * const path_setterm_typerate[] = {"setterm", "typerate"};
 static const char * const path_setterm_repeat[] = {"setterm", "repeat"};
 static const char * const path_setterm_timezone[] = {"setterm", "timezone"};
+static const char * const path_display[] = {"display"};
 static const char * const path_job[] = {"job"};
 static const char * const path_job_status[] = {"job", "status"};
 static const char * const path_job_start[] = {"job", "start"};
@@ -962,6 +968,7 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_setterm_typerate, setterm_keyrate_values),
     SHELL_COMPLETION_STATIC(path_setterm_repeat, setterm_keyrate_values),
     SHELL_COMPLETION_STATIC(path_setterm_timezone, setterm_timezone_values),
+    SHELL_COMPLETION_STATIC(path_display, display_subcommands),
     SHELL_COMPLETION_STATIC(path_job, job_subcommands),
     SHELL_COMPLETION_JOBS(path_job_status),
     SHELL_COMPLETION_JOBS(path_job_start),

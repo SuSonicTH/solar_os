@@ -210,6 +210,57 @@ static void ota_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  ota boot 0|1");
 }
 
+static void display_print_usage(solar_os_shell_io_t *term)
+{
+    solar_os_shell_io_writeln(term, "usage:");
+    solar_os_shell_io_writeln(term, "  display [list]");
+}
+
+static void display_print_targets(solar_os_shell_io_t *term)
+{
+    const size_t count = solar_os_display_target_count();
+    if (count == 0) {
+        solar_os_shell_io_writeln(term, "no display targets");
+        return;
+    }
+
+    solar_os_shell_io_writeln(term, "TARGET   SOURCE    DRIVER     SIZE      ROLE     READY BRIGHT");
+    for (size_t i = 0; i < count; i++) {
+        solar_os_display_target_t target;
+        if (!solar_os_display_get_target(i, &target)) {
+            continue;
+        }
+
+        char size[16];
+        snprintf(size,
+                 sizeof(size),
+                 "%ux%u",
+                 (unsigned)target.width,
+                 (unsigned)target.height);
+        solar_os_shell_io_printf(term,
+                                 "%-8s %-9s %-10s %-9s %-8s %-5s %s\n",
+                                 target.name,
+                                 target.source,
+                                 target.driver,
+                                 size,
+                                 target.role[0] != '\0' ? target.role : "-",
+                                 target.ready ? "yes" : "no",
+                                 target.brightness_supported ? "yes" : "no");
+    }
+}
+
+void solar_os_shell_cmd_display(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *term = terminal(ctx);
+
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
+        display_print_targets(term);
+        return;
+    }
+
+    display_print_usage(term);
+}
+
 static void ota_print_partition(solar_os_shell_io_t *term,
                                 const char *role,
                                 const solar_os_ota_partition_t *partition)
