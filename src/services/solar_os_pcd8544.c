@@ -6,7 +6,6 @@
 #include "esp_log.h"
 #include "pcd8544.h"
 #include "solar_os_display.h"
-#include "solar_os_fonts.h"
 
 #define SOLAR_OS_PCD8544_MAX 2
 
@@ -20,7 +19,7 @@ typedef struct {
     pcd8544_t display;
 } solar_os_pcd8544_device_t;
 
-static const char *TAG = "nokia5110";
+static const char *TAG = "pcd8544";
 static solar_os_pcd8544_device_t devices[SOLAR_OS_PCD8544_MAX];
 
 static bool binding_role_is(const solar_os_expansion_binding_t *binding, const char *role)
@@ -163,24 +162,6 @@ static esp_err_t register_display_target(solar_os_pcd8544_device_t *device)
     return solar_os_display_register_target(&target);
 }
 
-static void draw_attach_mark(solar_os_pcd8544_device_t *device)
-{
-    u8g2_t *u8g2 = pcd8544_get_u8g2(&device->display);
-    if (u8g2 == NULL) {
-        return;
-    }
-
-    u8g2_ClearBuffer(u8g2);
-    u8g2_SetFont(u8g2, u8g2_font_solar_os_default_r_12_tf);
-    u8g2_SetFontMode(u8g2, 1);
-    u8g2_SetFontPosBaseline(u8g2);
-    u8g2_DrawFrame(u8g2, 0, 0, PCD8544_WIDTH, PCD8544_HEIGHT);
-    u8g2_DrawStr(u8g2, 4, 14, "SolarOS");
-    u8g2_DrawStr(u8g2, 4, 29, device->name);
-    u8g2_DrawStr(u8g2, 4, 44, "PCD8544");
-    u8g2_SendBuffer(u8g2);
-}
-
 esp_err_t solar_os_pcd8544_attach(const char *name,
                                   const solar_os_expansion_binding_t *bindings,
                                   size_t binding_count)
@@ -221,9 +202,6 @@ esp_err_t solar_os_pcd8544_attach(const char *name,
     esp_err_t ret = pcd8544_init(&device->display, cs_pin, dc_pin, reset_pin);
     if (ret == ESP_OK) {
         ret = register_display_target(device);
-    }
-    if (ret == ESP_OK) {
-        draw_attach_mark(device);
     }
     if (ret != ESP_OK) {
         clear_device(device);

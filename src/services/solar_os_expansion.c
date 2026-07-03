@@ -5,7 +5,7 @@
 #include "esp_check.h"
 #include "solar_os_board.h"
 #include "solar_os_config.h"
-#if SOLAR_OS_PACKAGE_EXPANSION_NOKIA5110
+#if SOLAR_OS_PACKAGE_EXPANSION_PCD8544
 #include "solar_os_pcd8544.h"
 #endif
 #if SOLAR_OS_PACKAGE_EXPANSION_RFM69
@@ -36,10 +36,10 @@ static const solar_os_expansion_driver_t expansion_drivers[] = {
         .detach = solar_os_rfm69_detach,
     },
 #endif
-#if SOLAR_OS_PACKAGE_EXPANSION_NOKIA5110
+#if SOLAR_OS_PACKAGE_EXPANSION_PCD8544
     {
-        .name = "nokia5110",
-        .summary = "Nokia 5110 PCD8544 SPI LCD",
+        .name = "pcd8544",
+        .summary = "PCD8544 84x48 SPI LCD",
         .required_capabilities = SOLAR_OS_BOARD_CAP_EXPANSION_SPI |
             SOLAR_OS_BOARD_CAP_EXPANSION_GPIO,
         .probe_supported = false,

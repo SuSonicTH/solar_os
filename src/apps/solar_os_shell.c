@@ -404,8 +404,8 @@ static const char * const expansion_driver_values[] = {
 #if SOLAR_OS_PACKAGE_EXPANSION_RFM69
     "rfm69",
 #endif
-#if SOLAR_OS_PACKAGE_EXPANSION_NOKIA5110
-    "nokia5110",
+#if SOLAR_OS_PACKAGE_EXPANSION_PCD8544
+    "pcd8544",
 #endif
 };
 

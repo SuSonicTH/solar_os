@@ -442,14 +442,15 @@ expansion attach rfm69 radio0 spi=spi0 cs=gpio10 irq=gpio4 reset=gpio5
 expansion detach radio0
 ```
 
-Nokia 5110 / PCD8544 SPI LCD modules can be attached as auxiliary display
-targets with the `nokia5110` driver. The driver requires an expansion SPI bus,
-a CS/CE pin, a DC pin, and a reset/RST pin. On the ESP32-S3 DevKitC-1 target:
+PCD8544 84x48 SPI LCD modules, including Nokia 5110-style boards, can be
+attached as auxiliary display targets with the `pcd8544` driver. The driver
+requires an expansion SPI bus, a CS/CE pin, a DC pin, and a reset/RST pin. On
+the ESP32-S3 DevKitC-1 target:
 
 ```text
 display pins: VCC->3V3 GND->GND CLK/SCLK->GPIO12 DIN/MOSI->GPIO11
 display pins: CE/CS->GPIO10 DC->GPIO4 RST->GPIO5
-expansion attach nokia5110 lcd0 spi=spi0 cs=gpio10 dc=gpio4 reset=gpio5
+expansion attach pcd8544 lcd0 spi=spi0 cs=gpio10 dc=gpio4 reset=gpio5
 display list
 display test lcd0
 ```
@@ -458,7 +459,7 @@ display test lcd0
 accepted as an alias for `reset=gpio5`. If the module has an LED/backlight pin,
 wire it according to the module board; use suitable current limiting when tying
 it to 3V3. Boards without expansion SPI, such as the Waveshare RLCD target,
-will not compile the active `nokia5110` expansion driver.
+will not compile the active `pcd8544` expansion driver.
 
 Packet radio devices are datagram endpoints registered by expansion drivers, not
 byte-stream ports. The common radio layer preserves packet metadata such as RSSI
