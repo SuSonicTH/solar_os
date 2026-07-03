@@ -35,6 +35,7 @@ Hardware-backed tables are present only when the board/flavor includes the corre
 - `solaros.wifi`: `status`, `status_text`, `start`, `stop`, `connect`, `connect_saved`, `disconnect`, `forget`, `forget_ssid`, `forget_all`, `known`, `scan`, `ap_start`, `ap_stop`, `nat`
 - `solaros.mqtt`: `status`, `connect`, `disconnect`, `publish`, `subscribe`, `read` when the `net` package is compiled
 - `solaros.gpio`: constants `INPUT`, `OUTPUT`, `PULL_NONE`, `PULL_UP`, `PULL_DOWN`; functions `pins`, `allowed`, `mode`, `configure`, `read`, `write`
+- `solaros.led`: `status`, `set`, `on`, `off`, `toggle`
 - `solaros.adc`: `pins`, `read`
 - `solaros.pwm`: constants `FREQ_MIN`, `FREQ_MAX`; functions `status`, `set`, `off`
 - `solaros.i2c`: `info`, `probe`, `scan`, `read_reg`, `write_reg`

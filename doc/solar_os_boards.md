@@ -316,9 +316,9 @@ Expansion bus example:
 #define SOLAR_OS_BOARD_EXPANSION_PWM_MASK SOLAR_OS_BOARD_USER_GPIO_MASK
 ```
 
-The expansion descriptors describe connector resources available for future
-runtime expansion management. They do not claim the resources or initialize
-external hardware by themselves.
+The expansion descriptors describe connector resources available to runtime
+expansion management. They do not claim the resources or initialize external
+hardware by themselves.
 
 ## Board Selector
 

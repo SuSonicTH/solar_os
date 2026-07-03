@@ -39,12 +39,13 @@ The display-shell app exit chord is `CTRL+ALT+DEL`. Port shells use `Ctrl+]`.
 | `watch` | `watch [-n seconds] <command> [args...]` | Repeat another shell command until `Esc`, `q`, or the app-exit key is pressed. |
 | `sh` | `sh <file>` | Run a simple SolarOS shell script from storage. |
 | `reboot` | `reboot` | Restart the board. |
-| `sessions` | `sessions` | List display foreground app sessions. |
-| `fg` | `fg <session-id>` | Resume a display foreground app session. |
-| `close` | `close <session-id>` | Close a display foreground app session. |
+| `sessions` | `sessions` | List display app sessions, display shell sessions, and port shell sessions. |
+| `fg` | `fg <session-id>` | Resume a display app or display shell session. |
+| `close` | `close <session-id>` | Close a display app or display shell session, or stop a port shell session. |
 
-Sessions are foreground application state. Background services such as log
-followers, SLIP, DAQ, and HTTP serving are jobs and are controlled with `job`.
+Sessions are foreground application state plus shell instances attached to a
+display target or byte-stream port. Background services such as log followers,
+SLIP, DAQ, and HTTP serving are jobs and are controlled with `job`.
 
 Scripts are intentionally simple. `sh` skips blank lines and lines whose first
 non-space character is `#`, then executes each remaining line as a normal shell
@@ -100,6 +101,8 @@ setterm
 setterm orientation [0|90|180|270]
 setterm font [mono|compact]
 setterm textsize [12|14|16|18|20]
+setterm brightness [0..100]
+setterm backlight [0..100]
 setterm profile [vt100|ansi|dumb]
 setterm keyboard [us|de]
 setterm keyrate [off|1..60 [delay-ms]]
@@ -122,8 +125,9 @@ the display shell it prints guidance to set the profile from a port shell.
 | `session` | `session list` | List display app sessions, display shell sessions, and port shell sessions. |
 | `session` | `session create shell <port> [--term auto|vt100|ansi|dumb] [--size COLSxROWS]` | Start a shell session on a byte-stream port. |
 | `session` | `session create shell <display-target>` | Attach a shell session to a ready display target such as `lcd0`. |
-| `session` | `session fg <id>` or `session switch <id>` | Resume a display app session. |
+| `session` | `session fg <id>` or `session switch <id>` | Resume a display app or display shell session. |
 | `session` | `session close <id>` | Close a display app or display shell session, or stop a port shell session. |
+| `session` | `session background` | Print the current foreground/background-session note. |
 
 Port shells default to `--term auto`. Auto mode sends a terminal Device
 Attributes probe; a recognizable response enables VT100-style cursor controls
@@ -361,6 +365,7 @@ and writes the inactive ESP-IDF OTA partition.
 | `audio` | `audio mic [ms]` | Sample microphone level. |
 | `audio` | `audio loopback [ms] [volume]` | Run microphone-to-speaker loopback. |
 | `audio` | `audio off` | Stop audio output. |
+| `led` | `led [status|on|off|toggle]` | Inspect or control the built-in status LED when available. |
 | `expansion` | `expansion [status]` | Show expansion capabilities, connector resources, active devices, and resource claims. |
 | `expansion` | `expansion scan` | List expansion resources and probe-capable drivers. |
 | `expansion` | `expansion drivers` | List compiled expansion drivers. |
@@ -445,8 +450,8 @@ expansion attach rfm69 radio0 spi=spi0 cs=gpio10 irq=gpio4 reset=gpio5
 expansion detach radio0
 ```
 
-PCD8544 84x48 SPI LCD modules, including Nokia 5110-style boards, can be
-attached as auxiliary display targets with the `pcd8544` driver. The driver
+PCD8544 84x48 SPI LCD modules can be attached as auxiliary display targets with
+the `pcd8544` driver. The driver
 requires an expansion SPI bus, a CS/CE pin, a DC pin, and a reset/RST pin. On
 the ESP32-S3 DevKitC-1 target:
 

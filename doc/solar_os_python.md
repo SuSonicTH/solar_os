@@ -7,7 +7,7 @@ python
 python /apps/demo.py arg1 arg2
 ```
 
-Scripts receive their arguments through `sys.argv`. Script output is drawn in the SolarOS terminal. `CTRL+ALT+DEL` exits the REPL or requests `KeyboardInterrupt` while code is running.
+Scripts receive their arguments through `sys.argv`. Script output is drawn in the SolarOS terminal. The active shell's app-exit key exits the REPL or requests `KeyboardInterrupt` while code is running.
 
 The native module is called `solaros`:
 
@@ -244,6 +244,24 @@ solaros.gpio.mode(17, solaros.gpio.INPUT, solaros.gpio.PULL_UP)
 print("GPIO17", solaros.gpio.read(17))
 
 solaros.gpio.write(1, 1)
+```
+
+## `solaros.led`
+
+Status LED functions control a built-in board status LED when the board has one.
+
+- `status()`: return whether the status LED is currently on.
+- `set(on)`: set the status LED and return the resulting boolean state.
+- `on()`: turn the status LED on and return `True`.
+- `off()`: turn the status LED off and return `False`.
+- `toggle()`: toggle the status LED and return the resulting boolean state.
+
+Example:
+
+```python
+import solaros
+
+solaros.led.toggle()
 ```
 
 ## `solaros.adc`
@@ -658,4 +676,4 @@ solaros.write("wifi {} {}\n".format(wifi["state"], wifi["ip"]))
 
 ## Not Exposed Yet
 
-The Python bridge intentionally does not expose raw SSH/SCP session handles or direct foreground graphics drawing yet. Those APIs need object lifetime, ownership, and event-loop rules before they can safely become scriptable.
+The Python bridge intentionally does not expose raw SSH/SCP session handles yet. Those APIs need object lifetime, ownership, and event-loop rules before they can safely become scriptable.
