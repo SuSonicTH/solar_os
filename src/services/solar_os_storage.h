@@ -49,6 +49,7 @@ typedef struct {
 
 typedef enum {
     SOLAR_OS_STORAGE_MOUNT_SD,
+    SOLAR_OS_STORAGE_MOUNT_FLASH,
     SOLAR_OS_STORAGE_MOUNT_RAMFS,
 } solar_os_storage_mount_type_t;
 
@@ -66,6 +67,17 @@ esp_err_t solar_os_storage_unmount_volume(const char *target);
 bool solar_os_storage_is_mounted(void);
 void solar_os_storage_get_status(char *buffer, size_t len);
 const char *solar_os_storage_mount_point(void);
+
+// Joins a relative path under a storage-owned base path. Dot-dot segments are
+// clamped to base_path, so this is for app/service state paths, not shell cwd
+// resolution where users expect `..` to walk upward.
+esp_err_t solar_os_storage_join_path(const char *base_path,
+                                     const char *relative_path,
+                                     char *path,
+                                     size_t path_len);
+esp_err_t solar_os_storage_default_path(const char *relative_path,
+                                        char *path,
+                                        size_t path_len);
 esp_err_t solar_os_storage_get_usage(solar_os_storage_usage_t *usage);
 esp_err_t solar_os_storage_get_usage_for_path(const char *path, solar_os_storage_usage_t *usage);
 esp_err_t solar_os_storage_get_usage_for_block(const solar_os_storage_block_t *block,

@@ -3,6 +3,9 @@ members = [
   "core_runtime",
   "core_shell",
   "core_fs_commands",
+  "app_com",
+  "app_edit",
+  "app_less",
   "service_wifi",
   "service_ble",
   "service_sd",
@@ -104,9 +107,6 @@ triggers = ["app_lua"]
 [groups.utils]
 members = [
   "app_clock",
-  "app_com",
-  "app_edit",
-  "app_less",
   "app_reader",
   "app_files",
   "app_notes",
@@ -115,9 +115,6 @@ members = [
 ]
 triggers = [
   "app_clock",
-  "app_com",
-  "app_edit",
-  "app_less",
   "app_reader",
   "app_files",
   "app_notes",
@@ -132,6 +129,7 @@ sources = [
   "solar_os.c",
   "solar_os_jobs.c",
   "solar_os_task.c",
+  "drivers/flash_storage.c",
   "apps/solar_os_app_registry.c",
   "jobs/solar_os_job_registry.c",
   "services/solar_os_board_caps.c",
@@ -170,6 +168,7 @@ requires = [
   "heap",
   "nvs_flash",
   "u8g2",
+  "wear_levelling",
 ]
 
 [packages.core_shell]

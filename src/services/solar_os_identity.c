@@ -65,14 +65,10 @@ static void identity_read_file(const char *name,
         return;
     }
 
+    char dir[SOLAR_OS_STORAGE_PATH_MAX];
     char path[SOLAR_OS_STORAGE_PATH_MAX];
-    const int written = snprintf(path,
-                                 sizeof(path),
-                                 "%s/%s/%s",
-                                 solar_os_storage_mount_point(),
-                                 SOLAR_OS_IDENTITY_DIR,
-                                 name);
-    if (written < 0 || (size_t)written >= sizeof(path)) {
+    if (solar_os_storage_default_path(SOLAR_OS_IDENTITY_DIR, dir, sizeof(dir)) != ESP_OK ||
+        solar_os_storage_join_path(dir, name, path, sizeof(path)) != ESP_OK) {
         return;
     }
 

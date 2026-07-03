@@ -337,7 +337,7 @@ static esp_err_t curl_check_ready(solar_os_context_t *ctx)
     }
 
     if (curl_app.options.output_to_file && !solar_os_storage_is_mounted()) {
-        solar_os_shell_io_writeln(io, "curl: SD card required for -o");
+        solar_os_shell_io_writeln(io, "curl: storage required for -o");
         solar_os_shell_io_printf(io, "%s exits\n", solar_os_shell_io_app_exit_key(io));
         solar_os_shell_io_flush(io);
         return ESP_ERR_INVALID_STATE;

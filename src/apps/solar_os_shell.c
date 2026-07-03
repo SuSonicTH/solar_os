@@ -226,7 +226,7 @@ static const shell_command_t shell_builtin_commands[] = {
     {"humidity", "read SHTC3 humidity", solar_os_shell_cmd_humidity},
 #endif
     {"cd", "change directory", solar_os_shell_cmd_cd},
-    {"ls", "list SD card files", solar_os_shell_cmd_ls},
+    {"ls", "list storage files", solar_os_shell_cmd_ls},
     {"cat", "print a small text file", solar_os_shell_cmd_cat},
     {"sh", "run a shell script", cmd_sh},
     {"mkdir", "create directories", solar_os_shell_cmd_mkdir},
@@ -1542,24 +1542,19 @@ static void shell_backspace(solar_os_context_t *ctx)
 
 static bool shell_make_state_path(char *path, size_t path_len, const char *leaf)
 {
-    int written = 0;
-
     if (path == NULL || path_len == 0) {
         return false;
     }
 
     if (leaf == NULL || leaf[0] == '\0') {
-        written = snprintf(path, path_len, "%s/%s", solar_os_storage_mount_point(), SHELL_STATE_DIR);
-    } else {
-        written = snprintf(path,
-                           path_len,
-                           "%s/%s/%s",
-                           solar_os_storage_mount_point(),
-                           SHELL_STATE_DIR,
-                           leaf);
+        return solar_os_storage_default_path(SHELL_STATE_DIR, path, path_len) == ESP_OK;
     }
 
-    return written >= 0 && (size_t)written < path_len;
+    char dir[SHELL_PATH_MAX];
+    if (solar_os_storage_default_path(SHELL_STATE_DIR, dir, sizeof(dir)) != ESP_OK) {
+        return false;
+    }
+    return solar_os_storage_join_path(dir, leaf, path, path_len) == ESP_OK;
 }
 
 static bool shell_directory_exists(const char *path)
@@ -3717,7 +3712,7 @@ static void cmd_session(solar_os_context_t *ctx, int argc, char **argv)
         }
 
         uint8_t session_id = 0;
-        const esp_err_t err = solar_os_port_shell_start(ctx, argv[3], &session_id);
+        const esp_err_t err = solar_os_port_shell_start(ctx, argv[3], false, &session_id);
         if (err == ESP_OK) {
             solar_os_shell_io_printf(io,
                                      "session %u created: shell on %s\n",

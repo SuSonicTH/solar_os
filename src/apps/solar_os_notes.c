@@ -1360,7 +1360,7 @@ static esp_err_t notes_start(solar_os_context_t *ctx)
 
     if (!solar_os_storage_is_mounted()) {
         notes.error_only = true;
-        notes_set_message("SD card not mounted");
+        notes_set_message("storage not mounted");
         notes_render(ctx);
         return ESP_OK;
     }

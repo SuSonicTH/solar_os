@@ -949,11 +949,9 @@ static void init_peripherals(void)
     }
     solar_os_power_note_activity(millis_u32());
 
-    if (board_has(SOLAR_OS_BOARD_CAP_SD)) {
-        const esp_err_t sd_err = solar_os_storage_init();
-        if (sd_err != ESP_OK) {
-            SOLAR_OS_LOGW(TAG, "SD card unavailable: %s", esp_err_to_name(sd_err));
-        }
+    const esp_err_t storage_err = solar_os_storage_init();
+    if (storage_err != ESP_OK) {
+        SOLAR_OS_LOGW(TAG, "Default storage unavailable: %s", esp_err_to_name(storage_err));
     }
 
 #if SOLAR_OS_PACKAGE_SERVICE_RESOURCES
@@ -1180,7 +1178,7 @@ static void start_headless_shell_if_needed(void)
 
         uint8_t session_id = 0;
         const esp_err_t err =
-            solar_os_port_shell_start(&os_ctx, fallback_ports[i].port_name, &session_id);
+            solar_os_port_shell_start(&os_ctx, fallback_ports[i].port_name, true, &session_id);
         if (err == ESP_OK) {
             SOLAR_OS_LOGI(TAG,
                           "Headless shell session %u started on %s",

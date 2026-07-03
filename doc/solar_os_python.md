@@ -1,6 +1,6 @@
 # SolarOS Python API
 
-SolarOS embeds MicroPython as the `python` foreground application. It can run an interactive REPL or execute `.py` and `.mpy` files from SD card.
+SolarOS embeds MicroPython as the `python` foreground application. It can run an interactive REPL or execute `.py` and `.mpy` files from storage.
 
 ```text
 python
@@ -21,7 +21,7 @@ solaros.write("SolarOS " + solaros.version() + "\n")
 
 Most mutating functions return `None` on success and raise `OSError("ESP_ERR_...")` on service failure. Query functions return strings, integers, booleans, dictionaries, or lists.
 
-Functions that accept file paths use SolarOS shell-style paths. `/` means the default SD card mount; internally this resolves to the active storage mount point.
+Functions that accept file paths use SolarOS shell-style paths. `/` means the default storage mount; internally this resolves to the active storage mount point.
 
 ```python
 print(solaros.storage.resolve("/.shell/history"))
@@ -63,9 +63,9 @@ solaros.time.set_datetime({"year": 2026, "month": 6, "day": 19, "hour": 12, "min
 Storage functions expose SD mount and filesystem service operations.
 
 - `status()`: return a human-readable SD status string.
-- `is_mounted()`: return whether the default SD volume is mounted.
-- `mount()`: mount the default SD volume.
-- `unmount()`: unmount the default SD volume.
+- `is_mounted()`: return whether the default storage volume is mounted.
+- `mount()`: mount the default storage volume.
+- `unmount()`: unmount the default storage volume.
 - `mount_point()`: return the default mount point.
 - `usage([path])`: return disk usage for the default volume or the volume containing `path`.
 - `resolve(path)`: return the internal resolved path.
