@@ -133,6 +133,18 @@ static void restore_foreground_context(void)
     }
 }
 
+static void session_request_text_present_mode(const solar_os_session_entry_t *session)
+{
+    if (session_state.ctx == NULL || solar_os_context_graphics_active(session_state.ctx)) {
+        return;
+    }
+
+    solar_os_terminal_t *terminal = session != NULL ? session->terminal : session_state.current_terminal;
+    if (terminal != NULL && terminal->u8g2 != NULL) {
+        (void)solar_os_display_request_present_mode(terminal->u8g2, SOLAR_OS_DISPLAY_PRESENT_TEXT);
+    }
+}
+
 static void session_update_title(solar_os_session_entry_t *session)
 {
     if (session == NULL || session->app == NULL) {
@@ -557,6 +569,7 @@ static bool start_or_resume_session(solar_os_session_entry_t *session)
     session->suspended = false;
     session_update_title(session);
     session_mark_dirty(session);
+    session_request_text_present_mode(session);
     return true;
 }
 

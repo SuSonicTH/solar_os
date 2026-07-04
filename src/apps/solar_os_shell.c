@@ -79,6 +79,8 @@ typedef struct {
     bool complete_ports;
     bool complete_radios;
     bool complete_ramfs_mounts;
+    bool complete_display_targets;
+    bool complete_display_modes;
     bool complete_gpio_pins;
     bool complete_spi_cs;
     bool complete_streams;
@@ -279,6 +281,7 @@ static const char * const setterm_timezone_values[] = {"UTC", "Europe/Berlin"};
 static const char * const display_subcommands[] = {
     "list",
     "test",
+    "mode",
 };
 
 static const char * const ble_subcommands[] = {
@@ -662,6 +665,9 @@ static const char * const path_setterm_typerate[] = {"setterm", "typerate"};
 static const char * const path_setterm_repeat[] = {"setterm", "repeat"};
 static const char * const path_setterm_timezone[] = {"setterm", "timezone"};
 static const char * const path_display[] = {"display"};
+static const char * const path_display_test[] = {"display", "test"};
+static const char * const path_display_mode[] = {"display", "mode"};
+static const char * const path_display_mode_target[] = {"display", "mode", SHELL_COMPLETION_ANY};
 static const char * const path_job[] = {"job"};
 static const char * const path_job_status[] = {"job", "status"};
 static const char * const path_job_start[] = {"job", "start"};
@@ -905,6 +911,18 @@ static const char * const path_ota_flavor[] = {"ota", "flavor"};
         .path_count = SHELL_ARRAY_COUNT(path_array), \
         .complete_ramfs_mounts = true, \
     }
+#define SHELL_COMPLETION_DISPLAY_TARGETS(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .complete_display_targets = true, \
+    }
+#define SHELL_COMPLETION_DISPLAY_MODES(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .complete_display_modes = true, \
+    }
 #define SHELL_COMPLETION_GPIO_PINS(path_array) \
     { \
         .path = path_array, \
@@ -977,6 +995,9 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_setterm_repeat, setterm_keyrate_values),
     SHELL_COMPLETION_STATIC(path_setterm_timezone, setterm_timezone_values),
     SHELL_COMPLETION_STATIC(path_display, display_subcommands),
+    SHELL_COMPLETION_DISPLAY_TARGETS(path_display_test),
+    SHELL_COMPLETION_DISPLAY_TARGETS(path_display_mode),
+    SHELL_COMPLETION_DISPLAY_MODES(path_display_mode_target),
     SHELL_COMPLETION_STATIC(path_job, job_subcommands),
     SHELL_COMPLETION_JOBS(path_job_status),
     SHELL_COMPLETION_JOBS(path_job_start),
@@ -2962,6 +2983,110 @@ static void shell_completion_emit_ramfs_mounts(shell_completion_match_t *state)
     }
 }
 
+static void shell_completion_emit_display_targets(shell_completion_match_t *state)
+{
+    const size_t count = solar_os_display_target_count();
+
+    for (size_t i = 0; i < count; i++) {
+        solar_os_display_target_t target;
+        if (solar_os_display_get_target(i, &target)) {
+            shell_completion_emit(state, target.name);
+        }
+    }
+}
+
+static bool shell_completion_display_mode_seen(char values[][32],
+                                               size_t count,
+                                               const char *value)
+{
+    if (value == NULL) {
+        return true;
+    }
+    for (size_t i = 0; i < count; i++) {
+        if (strcmp(values[i], value) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void shell_completion_emit_display_mode_values(shell_completion_match_t *state,
+                                                      const char *values,
+                                                      char emitted[][32],
+                                                      size_t *emitted_count,
+                                                      size_t emitted_max)
+{
+    if (values == NULL || emitted == NULL || emitted_count == NULL) {
+        return;
+    }
+
+    const char *cursor = values;
+    while (*cursor != '\0') {
+        while (*cursor == ' ') {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+
+        char value[32];
+        size_t len = 0;
+        while (cursor[len] != '\0' && cursor[len] != ' ' && len + 1 < sizeof(value)) {
+            value[len] = cursor[len];
+            len++;
+        }
+        value[len] = '\0';
+        while (cursor[len] != '\0' && cursor[len] != ' ') {
+            len++;
+        }
+        cursor += len;
+
+        if (value[0] == '\0' ||
+            shell_completion_display_mode_seen(emitted, *emitted_count, value)) {
+            continue;
+        }
+        if (*emitted_count < emitted_max) {
+            strlcpy(emitted[*emitted_count], value, sizeof(emitted[*emitted_count]));
+            (*emitted_count)++;
+        }
+        shell_completion_emit(state, value);
+    }
+}
+
+static void shell_completion_emit_display_modes(shell_completion_match_t *state,
+                                                const char * const *tokens,
+                                                size_t token_count)
+{
+    char emitted[16][32];
+    size_t emitted_count = 0;
+
+    if (token_count >= 3 && tokens[2] != NULL) {
+        const char *values = NULL;
+        if (solar_os_display_get_controller_mode(tokens[2], NULL, &values) == ESP_OK) {
+            shell_completion_emit_display_mode_values(state,
+                                                      values,
+                                                      emitted,
+                                                      &emitted_count,
+                                                      SHELL_ARRAY_COUNT(emitted));
+        }
+        return;
+    }
+
+    const size_t count = solar_os_display_target_count();
+    for (size_t i = 0; i < count; i++) {
+        solar_os_display_target_t target;
+        const char *values = NULL;
+        if (solar_os_display_get_target(i, &target) &&
+            solar_os_display_get_controller_mode(target.name, NULL, &values) == ESP_OK) {
+            shell_completion_emit_display_mode_values(state,
+                                                      values,
+                                                      emitted,
+                                                      &emitted_count,
+                                                      SHELL_ARRAY_COUNT(emitted));
+        }
+    }
+}
+
 static void shell_completion_emit_gpio_pins(shell_completion_match_t *state)
 {
 #if SOLAR_OS_PACKAGE_SERVICE_GPIO
@@ -3395,6 +3520,12 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
         }
         if (rule->complete_ramfs_mounts) {
             shell_completion_emit_ramfs_mounts(state);
+        }
+        if (rule->complete_display_targets) {
+            shell_completion_emit_display_targets(state);
+        }
+        if (rule->complete_display_modes) {
+            shell_completion_emit_display_modes(state, tokens, token_count);
         }
         if (rule->complete_gpio_pins) {
             shell_completion_emit_gpio_pins(state);
