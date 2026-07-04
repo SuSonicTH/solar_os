@@ -107,15 +107,18 @@ static void solar_os_stbi_fit_gif_dimensions(uint32_t source_width,
         return;
     }
 
-    uint32_t scale_x = solar_os_stbi_div_ceil_u32(source_width, max_output_width);
-    uint32_t scale_y = solar_os_stbi_div_ceil_u32(source_height, max_output_height);
-    uint32_t scale = scale_x > scale_y ? scale_x : scale_y;
-    if (scale < 1U) {
-        scale = 1U;
+    const uint64_t height_for_width =
+        ((uint64_t)max_output_width * (uint64_t)source_height) / (uint64_t)source_width;
+    if (height_for_width <= (uint64_t)max_output_height) {
+        *out_width = max_output_width;
+        *out_height = height_for_width > 0 ? (uint32_t)height_for_width : 1U;
+        return;
     }
 
-    *out_width = source_width / scale;
-    *out_height = source_height / scale;
+    const uint64_t width_for_height =
+        ((uint64_t)max_output_height * (uint64_t)source_width) / (uint64_t)source_height;
+    *out_width = width_for_height > 0 ? (uint32_t)width_for_height : 1U;
+    *out_height = max_output_height;
     if (*out_width == 0) {
         *out_width = 1;
     }
@@ -124,12 +127,12 @@ static void solar_os_stbi_fit_gif_dimensions(uint32_t source_width,
     }
 }
 
-static void solar_os_stbi_gif_rgba_to_gray_scaled(const uint8_t *rgba,
-                                                  uint32_t source_width,
-                                                  uint32_t source_height,
-                                                  uint8_t *gray,
+static void solar_os_stbi_gif_rgba_to_gray_scaled(uint8_t *gray,
                                                   uint32_t output_width,
-                                                  uint32_t output_height)
+                                                  uint32_t output_height,
+                                                  const uint8_t *rgba,
+                                                  uint32_t source_width,
+                                                  uint32_t source_height)
 {
     if (rgba == NULL || gray == NULL ||
         source_width == 0 || source_height == 0 ||
@@ -312,6 +315,7 @@ esp_err_t solar_os_stb_decode_gif_gray(const uint8_t *data,
                                        uint32_t max_total_pixels,
                                        uint32_t max_output_width,
                                        uint32_t max_output_height,
+                                       solar_os_stb_rgba_to_gray_scaled_fn converter,
                                        solar_os_stb_gif_animation_t *out_animation)
 {
     if (data == NULL || len == 0 || out_animation == NULL) {
@@ -423,13 +427,22 @@ esp_err_t solar_os_stb_decode_gif_gray(const uint8_t *data,
                 err = ESP_ERR_INVALID_SIZE;
                 break;
             }
-            solar_os_stbi_gif_rgba_to_gray_scaled(rgba,
-                                                  scan_width,
-                                                  scan_height,
-                                                  gray + ((size_t)stored_frames *
-                                                      (size_t)output_pixels),
-                                                  output_width,
-                                                  output_height);
+            uint8_t *frame_gray = gray + ((size_t)stored_frames * (size_t)output_pixels);
+            if (converter != NULL) {
+                converter(frame_gray,
+                          output_width,
+                          output_height,
+                          rgba,
+                          scan_width,
+                          scan_height);
+            } else {
+                solar_os_stbi_gif_rgba_to_gray_scaled(frame_gray,
+                                                      output_width,
+                                                      output_height,
+                                                      rgba,
+                                                      scan_width,
+                                                      scan_height);
+            }
             stored_frames++;
         }
 

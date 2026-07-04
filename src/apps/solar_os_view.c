@@ -20,6 +20,7 @@
 #include "solar_os_storage.h"
 #include "solar_os_stb_image.h"
 #include "solar_os_terminal.h"
+#include "solar_os_vector.h"
 #include "solar_os_webp_decoder.h"
 
 #define VIEW_MAX_PIXELS (2U * 1024U * 1024U)
@@ -299,6 +300,7 @@ static esp_err_t view_decode_gif(FILE *file,
                                        view_gif_max_stored_pixels(),
                                        target_width,
                                        target_height,
+                                       solar_os_vector_rgba_to_gray_scaled,
                                        &animation);
     if (err == ESP_OK) {
         view_error_detail[0] = '\0';
@@ -831,6 +833,33 @@ static void view_clamp_pan(solar_os_gfx_t *gfx)
     }
 }
 
+static void view_fit_dimensions(int image_width,
+                                int image_height,
+                                int screen_width,
+                                int screen_height,
+                                int *draw_width,
+                                int *draw_height)
+{
+    if (draw_width == NULL || draw_height == NULL ||
+        image_width <= 0 || image_height <= 0 ||
+        screen_width <= 0 || screen_height <= 0) {
+        return;
+    }
+
+    const uint64_t height_for_width =
+        ((uint64_t)screen_width * (uint64_t)image_height) / (uint64_t)image_width;
+    if (height_for_width <= (uint64_t)screen_height) {
+        *draw_width = screen_width;
+        *draw_height = height_for_width > 0 ? (int)height_for_width : 1;
+        return;
+    }
+
+    const uint64_t width_for_height =
+        ((uint64_t)screen_height * (uint64_t)image_width) / (uint64_t)image_height;
+    *draw_width = width_for_height > 0 ? (int)width_for_height : 1;
+    *draw_height = screen_height;
+}
+
 static void view_draw_scaled(solar_os_gfx_t *gfx,
                              int origin_x,
                              int origin_y,
@@ -904,22 +933,13 @@ static void view_render(solar_os_context_t *ctx)
     int origin_x = 0;
     int origin_y = 0;
 
-    if (view_state.mode == VIEW_MODE_FIT &&
-        (draw_width > screen_width || draw_height > screen_height)) {
-        int scale_x = (draw_width + screen_width - 1) / screen_width;
-        int scale_y = (draw_height + screen_height - 1) / screen_height;
-        int scale = scale_x > scale_y ? scale_x : scale_y;
-        if (scale < 1) {
-            scale = 1;
-        }
-        draw_width /= scale;
-        draw_height /= scale;
-        if (draw_width < 1) {
-            draw_width = 1;
-        }
-        if (draw_height < 1) {
-            draw_height = 1;
-        }
+    if (view_state.mode == VIEW_MODE_FIT) {
+        view_fit_dimensions((int)view_state.image.width,
+                            (int)view_state.image.height,
+                            screen_width,
+                            screen_height,
+                            &draw_width,
+                            &draw_height);
     }
 
     if (view_state.mode == VIEW_MODE_ACTUAL) {

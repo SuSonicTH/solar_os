@@ -390,7 +390,7 @@ view [-fit|-actual] <image>
 Controls:
 
 - Arrows pan.
-- `f` toggles fit/actual mode.
+- `f` toggles fit/actual mode. Fit mode scales the image up or down to the screen.
 - `0` selects actual size.
 - `1` selects fit-to-screen.
 - `Esc` or app-exit key exits.
