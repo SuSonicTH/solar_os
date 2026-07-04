@@ -1230,6 +1230,40 @@ esp_err_t solar_os_sessions_close_any(uint8_t session_id, solar_os_shell_io_t *i
     return solar_os_sessions_close_session(session_id, io);
 }
 
+size_t solar_os_sessions_active_count(void)
+{
+    size_t count = 0;
+
+    for (size_t i = 0; i < SOLAR_OS_SESSION_MAX; i++) {
+        if (session_state.sessions[i].used && session_state.sessions[i].app != NULL) {
+            count++;
+        }
+    }
+    return count;
+}
+
+bool solar_os_sessions_get_active_id(size_t index, uint8_t *session_id)
+{
+    size_t current = 0;
+
+    if (session_id == NULL) {
+        return false;
+    }
+
+    for (size_t i = 0; i < SOLAR_OS_SESSION_MAX; i++) {
+        const solar_os_session_entry_t *session = &session_state.sessions[i];
+        if (!session->used || session->app == NULL) {
+            continue;
+        }
+        if (current == index) {
+            *session_id = session->id;
+            return true;
+        }
+        current++;
+    }
+    return false;
+}
+
 void solar_os_sessions_print_list(solar_os_shell_io_t *io, void *user)
 {
     (void)user;
