@@ -2825,6 +2825,16 @@ typedef struct {
     bool trailing_space;
 } shell_completion_parse_t;
 
+static shell_completion_parse_t *shell_alloc_completion_parse(void)
+{
+    shell_completion_parse_t *parse =
+        heap_caps_calloc(1, sizeof(*parse), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (parse == NULL) {
+        parse = heap_caps_calloc(1, sizeof(*parse), MALLOC_CAP_8BIT);
+    }
+    return parse;
+}
+
 typedef struct {
     solar_os_context_t *ctx;
     solar_os_shell_io_t *io;
@@ -4023,37 +4033,45 @@ static void shell_complete_command(solar_os_context_t *ctx, bool show_matches)
         return;
     }
 
-    shell_completion_parse_t parse;
-    if (!shell_completion_parse_input(ctx, &parse) || parse.count == 0) {
+    shell_completion_parse_t *parse = shell_alloc_completion_parse();
+    if (parse == NULL) {
+        return;
+    }
+    if (!shell_completion_parse_input(ctx, parse) || parse->count == 0) {
+        heap_caps_free(parse);
         if (show_matches && shell_session(ctx)->input_len == 0) {
             shell_print_builtin_command_matches(ctx, NULL);
         }
         return;
     }
 
-    const size_t current_index = parse.trailing_space ? parse.count : parse.count - 1;
-    if (current_index == 0 && !parse.trailing_space) {
+    const size_t current_index = parse->trailing_space ? parse->count : parse->count - 1;
+    if (current_index == 0 && !parse->trailing_space) {
+        heap_caps_free(parse);
         shell_complete_builtin_command(ctx, show_matches);
         return;
     }
 
-    const char *command = parse.tokens[0];
+    const char *command = parse->tokens[0];
     char effective_command[SHELL_INPUT_MAX];
     if (!shell_alias_lookup_target_command(command, effective_command, sizeof(effective_command))) {
         strlcpy(effective_command, command, sizeof(effective_command));
     }
 
     const size_t token_start =
-        parse.trailing_space ? shell_session(ctx)->input_len : parse.starts[current_index];
-    if (shell_complete_argument(ctx, &parse, current_index, token_start, show_matches)) {
+        parse->trailing_space ? shell_session(ctx)->input_len : parse->starts[current_index];
+    if (shell_complete_argument(ctx, parse, current_index, token_start, show_matches)) {
+        heap_caps_free(parse);
         return;
     }
 
     if (!shell_is_path_command(effective_command)) {
+        heap_caps_free(parse);
         return;
     }
     if (strcmp(effective_command, "scp") == 0 &&
         memchr(&shell_session(ctx)->input[token_start], ':', shell_session(ctx)->input_len - token_start) != NULL) {
+        heap_caps_free(parse);
         return;
     }
 
@@ -4061,6 +4079,7 @@ static void shell_complete_command(solar_os_context_t *ctx, bool show_matches)
                         token_start,
                         shell_path_completion_dirs_only(effective_command),
                         show_matches);
+    heap_caps_free(parse);
 }
 
 static void shell_script_discard_rest_of_line(FILE *file)
