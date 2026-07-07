@@ -315,8 +315,12 @@ Usage:
 scp [-P port] local [user@]host:remote
 scp [-P port] local [user@]host:
 scp [-P port] [user@]host:remote local
+scp [-P port] [user@]host:remote-glob dir
 scp [-P port] [user@]host:remote
 ```
+
+Remote download paths can use `*` or `?`. The local target must be an existing
+directory for remote wildcard downloads.
 
 Controls:
 
