@@ -32,6 +32,7 @@ typedef struct {
     const char *password;
     const char *local_path;
     const char *remote_path;
+    bool remote_glob;
 } solar_os_scp_config_t;
 
 typedef struct {

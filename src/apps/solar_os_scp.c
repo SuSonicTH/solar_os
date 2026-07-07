@@ -51,6 +51,7 @@ typedef struct {
     uint16_t port;
     int last_percent;
     uint64_t last_progress_step;
+    bool remote_glob;
     bool saw_error;
 } scp_app_state_t;
 
@@ -160,6 +161,11 @@ static const char *scp_remote_basename(const char *path)
     return path != NULL && path[0] != '\0' ? path : "scp.out";
 }
 
+static bool scp_remote_path_has_wildcards(const char *path)
+{
+    return path != NULL && (strchr(path, '*') != NULL || strchr(path, '?') != NULL);
+}
+
 static const char *scp_local_basename(const char *path)
 {
     const char *slash = path != NULL ? strrchr(path, '/') : NULL;
@@ -188,6 +194,7 @@ static bool scp_append_path(char *path, size_t path_len, const char *dir, const 
 static bool scp_prepare_local_download_path(solar_os_context_t *ctx,
                                             const char *arg,
                                             const char *remote_path,
+                                            bool remote_glob,
                                             char *local_path,
                                             size_t local_path_len)
 {
@@ -200,6 +207,10 @@ static bool scp_prepare_local_download_path(solar_os_context_t *ctx,
     }
 
     struct stat st;
+    if (remote_glob) {
+        return stat(local_path, &st) == 0 && S_ISDIR(st.st_mode);
+    }
+
     if (stat(local_path, &st) == 0 && S_ISDIR(st.st_mode)) {
         const char *name = scp_remote_basename(remote_path);
         char dir[SOLAR_OS_STORAGE_PATH_MAX];
@@ -238,6 +249,7 @@ static void scp_render_usage(solar_os_context_t *ctx)
     solar_os_shell_io_writeln(io, "  scp [-P port] local [user@]host:remote");
     solar_os_shell_io_writeln(io, "  scp [-P port] local [user@]host:");
     solar_os_shell_io_writeln(io, "  scp [-P port] [user@]host:remote local");
+    solar_os_shell_io_writeln(io, "  scp [-P port] [user@]host:remote-glob dir");
     solar_os_shell_io_writeln(io, "  scp [-P port] [user@]host:remote");
     solar_os_shell_io_printf(io, "%s exits\n", solar_os_shell_io_app_exit_key(io));
     solar_os_shell_io_flush(io);
@@ -276,6 +288,7 @@ static esp_err_t scp_begin_transfer(solar_os_context_t *ctx)
         .password = scp_app.password,
         .local_path = scp_app.local_path,
         .remote_path = scp_app.remote_path,
+        .remote_glob = scp_app.remote_glob,
     };
 
     solar_os_shell_io_clear(io);
@@ -397,12 +410,14 @@ static bool scp_parse_args(solar_os_context_t *ctx)
         }
 
         scp_app.direction = SOLAR_OS_SCP_DOWNLOAD;
+        scp_app.remote_glob = scp_remote_path_has_wildcards(src.path);
         strlcpy(scp_app.username, src.username, sizeof(scp_app.username));
         strlcpy(scp_app.host, src.host, sizeof(scp_app.host));
         strlcpy(scp_app.remote_path, src.path, sizeof(scp_app.remote_path));
         return scp_prepare_local_download_path(ctx,
                                                NULL,
                                                scp_app.remote_path,
+                                               scp_app.remote_glob,
                                                scp_app.local_path,
                                                sizeof(scp_app.local_path));
     }
@@ -419,12 +434,14 @@ static bool scp_parse_args(solar_os_context_t *ctx)
             return false;
         }
         scp_app.direction = SOLAR_OS_SCP_DOWNLOAD;
+        scp_app.remote_glob = scp_remote_path_has_wildcards(src.path);
         strlcpy(scp_app.username, src.username, sizeof(scp_app.username));
         strlcpy(scp_app.host, src.host, sizeof(scp_app.host));
         strlcpy(scp_app.remote_path, src.path, sizeof(scp_app.remote_path));
         return scp_prepare_local_download_path(ctx,
                                                solar_os_context_argv(ctx, argi + 1),
                                                scp_app.remote_path,
+                                               scp_app.remote_glob,
                                                scp_app.local_path,
                                                sizeof(scp_app.local_path));
     }
